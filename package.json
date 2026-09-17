@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@langchain/google-genai": "^2.3.2",
+    "@langchain/openai": "^1.5.13",
     "langchain": "^1.5.11",
     "lucide-react": "^1.47.0",
     "next": "16.3.5",

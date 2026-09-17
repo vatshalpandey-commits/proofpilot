@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowUpRight, BrainCircuit, Calculator, Check, ChevronRight, CircleStop, FileSearch, FlaskConical, Gauge, GitBranch, Globe2, History, Info, Layers3, LoaderCircle, Radio, Search, ShieldCheck, Sparkles, TerminalSquare, Wrench, X, Zap } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, BrainCircuit, Calculator, Check, ChevronRight, CircleStop, FileSearch, FlaskConical, Gauge, GitBranch, GitCompareArrows, Globe2, History, Info, Layers3, LoaderCircle, Radio, Search, ShieldCheck, Sparkles, TerminalSquare, Wrench, X, Zap } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { OrbitalFilm } from "./orbital-film";
@@ -27,6 +27,16 @@ export default function Home() {
     setTransitionId(id => id + 1);
     setView(next);
   }
+  function moveTo(id: string) {
+    window.setTimeout(() => document.getElementById(id)?.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      block: "start",
+    }), 80);
+  }
+  function openComparison() {
+    navigate("compare");
+    moveTo("workspace");
+  }
   const [eventId, setEventId] = useState<string | null>(null);
   const [claim, setClaim] = useState<number | null>(null);
   const [judge, setJudge] = useState(false);
@@ -46,19 +56,21 @@ export default function Home() {
 
   async function launch() {
     if (question.trim().length < 10 || loading) return;
-    setLoading(true); setError(""); setResult(null); setEventId(null); setClaim(null); setView("observe");
+    setLoading(true); setError(""); setResult(null); setEventId(null); setClaim(null); navigate("observe"); moveTo("workspace");
     try {
       const response = await fetch("/api/research", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: question.trim(), chaosMode: chaos }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.message ?? "Research run failed");
       setResult(body);
+      navigate("report");
+      moveTo("workspace");
     } catch (e) { setError(e instanceof Error ? e.message : "Unexpected error"); }
     finally { setLoading(false); }
   }
 
   async function compare() {
     if (question.trim().length < 10 || comparing) return;
-    setComparing(true); setError(""); setView("compare");
+    setComparing(true); setError(""); navigate("compare"); moveTo("workspace");
     try {
       const response = await fetch("/api/compare", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({question:question.trim()}) });
       const body = await response.json();
@@ -73,7 +85,7 @@ export default function Home() {
     <header className="topbar">
       <div className="brand"><Logo /><div><b>ProofPilot</b><span>Agent Observatory · V2</span></div></div>
       <div className="run-id"><i className={loading ? "live" : ""} />{loading ? "RUNNING" : result ? result.status.toUpperCase() : "READY"}<em />{result ? `${result.state.trace.length} EVENTS` : "NO ACTIVE TRACE"}</div>
-      <div className="top-actions"><button className={judge ? "selected" : ""} onClick={() => setJudge(!judge)}><Gauge size={14} />Judge mode</button><a href="https://github.com/vatshalpandey-commits/proofpilot" target="_blank" rel="noreferrer">Source <ArrowUpRight size={13} /></a></div>
+      <div className="top-actions"><button className="top-compare" onClick={openComparison}><GitCompareArrows size={14} />Compare <span>Bonus</span></button><button className={judge ? "selected" : ""} onClick={() => setJudge(!judge)}><Gauge size={14} />Judge mode</button><a href="https://github.com/vatshalpandey-commits/proofpilot" target="_blank" rel="noreferrer">Source <ArrowUpRight size={13} /></a></div>
     </header>
 
     <section className="intro">
@@ -86,13 +98,13 @@ export default function Home() {
     </section>
     <section className="investigation" id="investigation" aria-label="Research workspace">
     <div className="section-title" data-reveal><div><p className="eyebrow">YOUR NEXT QUESTION</p><h2>Look a little closer.</h2></div><p>One question. A trail you can follow.</p></div>
-    <section className="mission-bar"><label><Search size={22} /><textarea rows={2} aria-label="Research mission" maxLength={3000} value={question} onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); launch(); } }} /></label><div className="mission-actions"><button aria-pressed={chaos} title="Simulate the first search failure to test recovery" className={`chaos ${chaos ? "on" : ""}`} onClick={() => setChaos(!chaos)} disabled={loading}><FlaskConical size={17} />Test recovery <span>{chaos ? "ON" : "OFF"}</span></button><button className="launch" onClick={launch} disabled={loading || comparing || question.trim().length<10}>{loading ? <LoaderCircle className="spin" size={18} /> : <ChevronRight size={18} />}{loading ? "Investigating…" : "Investigate"}</button></div></section>
+    <section className="mission-bar"><label><Search size={22} /><textarea rows={2} aria-label="Research mission" maxLength={3000} value={question} onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); launch(); } }} /></label><div className="mission-actions"><button aria-pressed={chaos} title="Simulate the first search failure to test recovery" className={`chaos ${chaos ? "on" : ""}`} onClick={() => setChaos(!chaos)} disabled={loading}><FlaskConical size={17} />Test recovery <span>{chaos ? "ON" : "OFF"}</span></button><div className="run-actions"><button className="bonus-launch" onClick={openComparison} disabled={loading || comparing || question.trim().length<10}><GitCompareArrows size={17}/><span><b>Compare with LangChain</b><small>Bonus experiment</small></span></button><button className="launch" onClick={launch} disabled={loading || comparing || question.trim().length<10}>{loading ? <LoaderCircle className="spin" size={18} /> : <ChevronRight size={18} />}{loading ? "Investigating…" : "Investigate"}</button></div></div></section>
     <div className="suggestions"><span>Or explore</span>{examples.map((example,index)=><button key={example} disabled={loading} onClick={()=>setQuestion(example)}>{["The energy transition","The real cost of an EV","The four-day week"][index]}<ArrowUpRight size={14}/></button>)}</div>
     {judge && <div className="judge"><Gauge size={17} /><b>JUDGE MODE · 1/5 · CUSTOM LOOP</b><p>The center instrument is driven by our own plan → act → observe loop. {result ? "This run contains inspectable evidence." : "Launch a run to create evidence."}</p><button onClick={() => setJudge(false)}><X size={13} /></button></div>}
     {error && <div className="error"><CircleStop size={17} /><div><b>Research run stopped</b><p>{error}</p></div><button onClick={() => setError("")}><X size={14} /></button></div>}
-    <nav className="mobile-tabs" style={{"--active": ["observe","trace","report","compare"].indexOf(view)} as React.CSSProperties} aria-label="Investigation views">{(["observe", "trace", "report", "compare"] as View[]).map(x => <button aria-current={view===x?"page":undefined} className={view === x ? "selected" : ""} onClick={() => navigate(x)} key={x}>{x}</button>)}</nav>
+    <nav className="mobile-tabs" style={{"--active": ["observe","trace","report","compare"].indexOf(view)} as React.CSSProperties} aria-label="Investigation views">{(["observe", "trace", "report", "compare"] as View[]).map(x => <button aria-current={view===x?"page":undefined} className={view === x ? "selected" : ""} onClick={() => { navigate(x); moveTo("workspace"); }} key={x}>{x}{x==="compare"&&<small>BONUS</small>}</button>)}</nav>
 
-    <div className={`workspace mode-${view}`}>
+    <div className={`workspace mode-${view}`} id="workspace">
       {transitionId > 0 && <OrbitalFilm key={transitionId} transition />}
       <MissionRail result={result} stats={stats} show={view === "observe"} />
       <section key={view} className={`field view-${view}`}>{view === "report" ? <Report result={result} claim={claim} setClaim={setClaim} /> : view === "compare" ? <Arena comparison={comparison} loading={comparing} run={compare} /> : <><div className="field-heading"><span>The observatory</span><span className="field-status"><i className={loading?"live":""}/>{loading?"Awaiting recorded results":result?"Recorded investigation":"Ready when you are"}</span></div><Constellation result={result} loading={loading} claim={claim} activeEvent={activeEvent} selectEvent={setEventId} /></>}</section>
@@ -133,7 +145,7 @@ function Recorder({result,eventId,select,show}:{result:Result|null;eventId:strin
 
 function Report({result,claim,setClaim}:{result:Result|null;claim:number|null;setClaim:(x:number|null)=>void}) {const claims=result?splitClaims(result.answer).slice(0,12):[];return <article className="report"><header><div><span>EVIDENCE REPORT</span><h2>{result?"Investigation findings":"No report recorded"}</h2></div>{result&&<label><ShieldCheck size={14}/>Run recorded</label>}</header>{result?<><div className="trace-tip"><Sparkles size={14}/><div><b>Review a finding</b><span>Select a sentence to inspect run context. Claim-level source mapping is not yet available.</span></div></div><div className="claims">{claims.map((x,i)=><button className={claim===i?"selected":""} onClick={()=>setClaim(claim===i?null:i)} key={x+i}><span>{String(i+1).padStart(2,"0")}</span><p>{x}</p><ChevronRight size={14}/></button>)}</div><details><summary>Read complete generated report</summary><div className="prose"><ReactMarkdown>{result.answer}</ReactMarkdown></div></details></>:<div className="empty"><FileSearch size={28}/><h3>Launch an investigation first</h3><p>Findings, citations, conflicts, and gaps will live here.</p></div>}</article>}
 
-function Arena({comparison,loading,run}:{comparison:Comparison|null;loading:boolean;run:()=>void}) {return <div className="arena"><span>COMPARISON ARENA · BONUS TRACK</span><h2>Two approaches. One question.</h2><p>Both agents receive the same question and tools. System prompts and execution limits differ, so this is an exploratory comparison, not a controlled benchmark.</p><button className="compare-run" onClick={run} disabled={loading}>{loading?<LoaderCircle className="spin" size={14}/>:<Zap size={14}/>} {loading?"Running both agents":"Compare approaches"}</button><div className="disclosure"><b><Info size={13}/>Configuration disclosure</b><div><Metric label="Question" value="Identical"/><Metric label="Model" value={comparison?.configuration.model??"Gemini 3.6"}/><Metric label="Tools" value="3 each"/><Metric label="Execution limits" value="Different"/></div></div><div className="lanes"><Lane title="ProofPilot" subtitle="Custom loop" live={!!comparison} events={comparison?.proofpilot.events??0} calls={comparison?.proofpilot.toolCalls??0} duration={comparison?.proofpilot.durationMs}/><Lane title="LangChain" subtitle="Standard framework" live={!!comparison} events={comparison?.baseline.events.length??0} calls={comparison?.baseline.toolCalls??0} duration={comparison?.baseline.durationMs}/></div>{comparison?<div className="comparison-note"><ShieldCheck size={15}/><div><b>Paired run recorded</b><p>Results are descriptive: inspect event count, tool calls, latency, recovery visibility, and both answers. Lower is not automatically better.</p></div></div>:<div className="pending"><FlaskConical size={16}/><div><b>Ready for a controlled paired run</b><p>This makes separate API calls and may use multiple Gemini requests. Wait for any free-tier cooldown first.</p></div></div>}</div>}
+function Arena({comparison,loading,run}:{comparison:Comparison|null;loading:boolean;run:()=>void}) {return <div className="arena"><span>COMPARISON ARENA · BONUS TRACK</span><h2>Our framework against LangChain.</h2><p>The same question, model, and three tools enter both lanes. ProofPilot uses our custom plan → act → observe loop; the other lane uses LangChain’s standard agent runtime.</p><button className="compare-run" onClick={run} disabled={loading}>{loading?<LoaderCircle className="spin" size={14}/>:<Zap size={14}/>} {loading?"Running both systems…":"Run the head-to-head"}</button><div className="disclosure"><b><Info size={13}/>Fair-comparison setup</b><div><Metric label="Question" value="Identical"/><Metric label="Model" value={comparison?.configuration.model??"Free Groq model"}/><Metric label="Tools" value="Same 3"/><Metric label="Frameworks" value="Custom vs LangChain"/></div></div><div className="lanes"><Lane title="ProofPilot" subtitle="Our custom loop" live={!!comparison} events={comparison?.proofpilot.events??0} calls={comparison?.proofpilot.toolCalls??0} duration={comparison?.proofpilot.durationMs}/><Lane title="LangChain" subtitle="Standard framework" live={!!comparison} events={comparison?.baseline.events.length??0} calls={comparison?.baseline.toolCalls??0} duration={comparison?.baseline.durationMs}/></div>{comparison?<div className="comparison-note"><ShieldCheck size={15}/><div><b>Paired run recorded</b><p>Compare event visibility, tool calls, latency, recovery detail, and both final answers. The point is to show what our framework exposes that a standard abstraction hides.</p></div></div>:<div className="pending"><FlaskConical size={16}/><div><b>Ready for the bonus demonstration</b><p>Run both systems on the question above. The free Groq provider is used when configured, avoiding Gemini’s cooldown.</p></div></div>}</div>}
 function Lane({title,subtitle,live,events,calls,duration}:{title:string;subtitle:string;live?:boolean;events:number;calls:number;duration?:number}) {return <section className={`lane ${live?"live":""}`}><header>{title==="ProofPilot"?<BrainCircuit size={17}/>:<Layers3 size={17}/>}<div><b>{title}</b><span>{subtitle}</span></div><i>{live?"RECORDED":"READY"}</i></header><div className="metrics"><Metric label="Events" value={events}/><Metric label="Tool calls" value={calls}/><Metric label="Duration" value={duration?`${(duration/1000).toFixed(1)}s`:"—"}/></div><div className="bars"><span>{events ? `${events} events recorded in this lane` : "No paired trace recorded"}</span></div></section>}
 
 function Heading({overline,title,icon:ic}:{overline:string;title:string;icon:React.ReactNode}){return <div className="heading"><i>{ic}</i><div><span>{overline}</span><h2>{title}</h2></div></div>}

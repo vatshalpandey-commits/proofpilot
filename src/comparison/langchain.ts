@@ -1,4 +1,5 @@
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { ChatOpenAI } from "@langchain/openai";
 import { tool } from "@langchain/core/tools";
 import { createAgent } from "langchain";
 
@@ -21,7 +22,7 @@ export type BaselineResult = {
 
 export async function runLangChainBaseline(
   goal: string,
-  apiKey: string,
+  provider: { type: "gemini"; apiKey: string } | { type: "groq"; apiKey: string; model: string },
   registry: ToolRegistry,
 ): Promise<BaselineResult> {
   const startedAt = Date.now();
@@ -31,7 +32,18 @@ export async function runLangChainBaseline(
       { name: registered.name, description: registered.description, schema: registered.inputSchema },
     ),
   );
-  const model = new ChatGoogleGenerativeAI({ model: "gemini-3.6-flash", apiKey, temperature: 0 });
+  const model = provider.type === "groq"
+    ? new ChatOpenAI({
+        model: provider.model,
+        apiKey: provider.apiKey,
+        temperature: 0,
+        configuration: { baseURL: "https://api.groq.com/openai/v1" },
+      })
+    : new ChatGoogleGenerativeAI({
+        model: "gemini-3.6-flash",
+        apiKey: provider.apiKey,
+        temperature: 0,
+      });
   const agent = createAgent({
     model,
     tools,

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { GeminiModel, runAgent } from "@/agent";
+import { GeminiModel, GroqModel, runAgent } from "@/agent";
 import { runLangChainBaseline } from "@/comparison/langchain";
 import { createResearchToolRegistry } from "@/tools/registry";
 
@@ -12,16 +12,25 @@ export async function POST(request: Request) {
   try {
     const { question } = schema.parse(await request.json());
     const geminiApiKey = process.env.GEMINI_API_KEY;
+    const groqApiKey = process.env.GROQ_API_KEY;
     const tavilyApiKey = process.env.TAVILY_API_KEY;
     if (!geminiApiKey || !tavilyApiKey) return Response.json({ message: "Server API keys are not configured." }, { status: 503 });
 
+    const modelName = groqApiKey ? "qwen/qwen3.8-27b" : "gemini-3.6-flash";
+    const proofModel = groqApiKey
+      ? new GroqModel(groqApiKey, modelName)
+      : new GeminiModel(geminiApiKey);
+    const baselineProvider = groqApiKey
+      ? { type: "groq" as const, apiKey: groqApiKey, model: modelName }
+      : { type: "gemini" as const, apiKey: geminiApiKey };
+
     const proofStarted = Date.now();
-    const proofpilot = await runAgent(question, new GeminiModel(geminiApiKey), createResearchToolRegistry({ tavilyApiKey }), { maxSteps: 2, toolTimeoutMs: 15_000, maxModelFailures: 0 });
+    const proofpilot = await runAgent(question, proofModel, createResearchToolRegistry({ tavilyApiKey }), { maxSteps: 2, toolTimeoutMs: 15_000, maxModelFailures: 0 });
     const proofDurationMs = Date.now() - proofStarted;
-    const baseline = await runLangChainBaseline(question, geminiApiKey, createResearchToolRegistry({ tavilyApiKey }));
+    const baseline = await runLangChainBaseline(question, baselineProvider, createResearchToolRegistry({ tavilyApiKey }));
 
     return Response.json({
-      configuration: { model: "gemini-3.6-flash", tools: ["web_search", "read_webpage", "calculator"], stepCap: 2, prompt: question },
+      configuration: { model: modelName, tools: ["web_search", "read_webpage", "calculator"], stepCap: 2, prompt: question },
       proofpilot: { durationMs: proofDurationMs, toolCalls: proofpilot.state.observations.length, events: proofpilot.state.trace.length, recoveries: proofpilot.state.observations.filter((item) => !item.result.ok).length, answer: proofpilot.answer },
       baseline,
     });
