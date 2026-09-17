@@ -31,7 +31,7 @@ export async function POST(request: Request) {
 
     return Response.json({
       configuration: { model: modelName, tools: ["web_search", "read_webpage", "calculator"], stepCap: 2, prompt: question },
-      proofpilot: { durationMs: proofDurationMs, toolCalls: proofpilot.state.observations.length, events: proofpilot.state.trace.length, recoveries: proofpilot.state.observations.filter((item) => !item.result.ok).length, answer: proofpilot.answer },
+      proofpilot: { durationMs: proofDurationMs, toolCalls: proofpilot.state.observations.length, events: proofpilot.state.trace.length, recoveries: proofpilot.state.observations.filter((item) => !item.result.ok).length, answer: proofpilot.answer, trace: proofpilot.state.trace },
       baseline,
     });
   } catch (error) {
