@@ -34,6 +34,9 @@ export async function runAgent(
     let decision;
     try {
       decision = await model.decide({ state, tools: tools.definitions() });
+      for (const notice of model.drainNotices?.() ?? []) {
+        addTrace(state, "recovery", notice.title, notice.detail);
+      }
       modelFailures = 0;
     } catch (error) {
       if (error instanceof ModelRequestError && !error.retryable) {

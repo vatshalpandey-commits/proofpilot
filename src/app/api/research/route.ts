@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { GeminiModel, runAgent } from "@/agent";
+import { GeminiModel, GroqModel, QuotaFallbackModel, runAgent } from "@/agent";
 import { createResearchToolRegistry } from "@/tools/registry";
 
 export const maxDuration = 60;
@@ -15,6 +15,7 @@ export async function POST(request: Request) {
     const input = requestSchema.parse(await request.json());
     const geminiApiKey = process.env.GEMINI_API_KEY;
     const tavilyApiKey = process.env.TAVILY_API_KEY;
+    const groqApiKey = process.env.GROQ_API_KEY;
 
     if (!geminiApiKey || !tavilyApiKey) {
       return Response.json(
@@ -26,14 +27,19 @@ export async function POST(request: Request) {
       );
     }
 
+    const primaryModel = new GeminiModel(geminiApiKey);
+    const model = groqApiKey
+      ? new QuotaFallbackModel(primaryModel, new GroqModel(groqApiKey))
+      : primaryModel;
+
     const result = await runAgent(
       input.question,
-      new GeminiModel(geminiApiKey),
+      model,
       createResearchToolRegistry({
         tavilyApiKey,
         chaosMode: input.chaosMode,
       }),
-      { maxSteps: 5, toolTimeoutMs: 15_000, maxModelFailures: 1 },
+      { maxSteps: 3, toolTimeoutMs: 15_000, maxModelFailures: 1 },
     );
 
     return Response.json(result);
