@@ -21,7 +21,7 @@ type GeminiResponse = {
 export class GeminiModel implements AgentModel {
   constructor(
     private readonly apiKey: string,
-    private readonly model = process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
+    private readonly model = process.env.GEMINI_MODEL ?? "gemini-3.6-flash",
   ) {}
 
   async decide({ state, tools }: ModelInput): Promise<AgentDecision> {
