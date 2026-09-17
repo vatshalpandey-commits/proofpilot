@@ -25,6 +25,7 @@ describe("custom agent loop", () => {
           plan: ["Answer the user"],
           rationale: "The calculated result is available.",
           answer: "The result is 42.",
+          claims: [],
         };
       },
     };
@@ -59,12 +60,13 @@ describe("custom agent loop", () => {
             arguments: {},
           };
         }
-        expect(state.observations[0].result.ok).toBe(false);
+        expect(state.recentObservations[0].outcome.ok).toBe(false);
         return {
           action: "final",
           plan: ["Explain the limitation"],
           rationale: "The failure is visible and another attempt would not help.",
           answer: "The source failed, so the limitation is reported honestly.",
+          claims: [],
         };
       },
     };
@@ -97,6 +99,7 @@ describe("custom agent loop", () => {
           plan: ["Answer with the available evidence"],
           rationale: "The fallback provider completed the decision.",
           answer: "Recovered successfully.",
+          claims: [],
         };
       },
     };
@@ -118,5 +121,40 @@ describe("custom agent loop", () => {
         }),
       ]),
     );
+  });
+
+  it("maps final claims only to evidence captured from real tool output", async () => {
+    let turn = 0;
+    const model: AgentModel = {
+      async decide({ state }) {
+        turn += 1;
+        if (turn === 1) return { action: "tool", plan: ["Search", "Synthesize"], rationale: "Find evidence.", tool: "web_search", arguments: { query: "solar growth" } };
+        expect(state.relevantEvidence[0].id).toBe("EV-001");
+        return {
+          action: "final",
+          plan: ["Synthesize"],
+          rationale: "The evidence supports a finding.",
+          answer: "Solar capacity is growing.",
+          claims: [
+            { id: "CL-001", text: "Solar capacity is growing.", evidenceIds: ["EV-001"] },
+            { id: "CL-002", text: "Unsupported claim.", evidenceIds: ["EV-999"] },
+          ],
+        };
+      },
+    };
+    const tools = new ToolRegistry().register({
+      name: "web_search",
+      description: "Searches",
+      parameters: { type: "object" },
+      inputSchema: z.object({ query: z.string() }),
+      async execute() {
+        return { results: [{ title: "Energy report", url: "https://example.com/report", snippet: "Solar capacity grew by 20 percent." }] };
+      },
+    });
+
+    const result = await runAgent("Research solar capacity growth", model, tools, { maxSteps: 2 });
+    expect(result.report.claims).toEqual([{ id: "CL-001", text: "Solar capacity is growing.", evidenceIds: ["EV-001"] }]);
+    expect(result.state.evidence[0]).toMatchObject({ url: "https://example.com/report", tool: "web_search" });
+    expect(result.state.trace.some((event) => event.id === result.state.evidence[0].eventId)).toBe(true);
   });
 });

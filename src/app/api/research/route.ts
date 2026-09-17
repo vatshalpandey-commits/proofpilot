@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { GeminiModel, GroqModel, QuotaFallbackModel, runAgent } from "@/agent";
+import { GeminiModel, GroqModel, QuotaFallbackModel, RateLimitRetryModel, runAgent } from "@/agent";
 import { createResearchToolRegistry } from "@/tools/registry";
 
 export const maxDuration = 60;
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
 
     const primaryModel = new GeminiModel(geminiApiKey);
     const model = groqApiKey
-      ? new QuotaFallbackModel(primaryModel, new GroqModel(groqApiKey))
+      ? new QuotaFallbackModel(primaryModel, new RateLimitRetryModel(new GroqModel(groqApiKey)))
       : primaryModel;
 
     const result = await runAgent(

@@ -16,6 +16,11 @@ export const agentDecisionSchema = z.discriminatedUnion("action", [
     action: z.literal("final"),
     ...sharedFields,
     answer: z.string().min(1),
+    claims: z.array(z.object({
+      id: z.string().min(1).max(80),
+      text: z.string().min(1),
+      evidenceIds: z.array(z.string().min(1)).min(1),
+    })).default([]),
   }),
 ]);
 

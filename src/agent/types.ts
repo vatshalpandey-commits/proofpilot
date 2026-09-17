@@ -15,6 +15,27 @@ export type Observation = {
   result: ToolResult;
 };
 
+export type EvidenceRecord = {
+  id: string;
+  title: string;
+  url: string | null;
+  supportingText: string;
+  tool: string;
+  step: number;
+  eventId: string;
+};
+
+export type ReportClaim = {
+  id: string;
+  text: string;
+  evidenceIds: string[];
+};
+
+export type EvidenceReport = {
+  answer: string;
+  claims: ReportClaim[];
+};
+
 export type TraceEvent = {
   id: string;
   step: number;
@@ -29,12 +50,14 @@ export type AgentState = {
   plan: string[];
   step: number;
   observations: Observation[];
+  evidence: EvidenceRecord[];
   trace: TraceEvent[];
   seenToolCalls: string[];
 };
 
 export type AgentRunResult = {
   answer: string;
+  report: EvidenceReport;
   state: AgentState;
   status: "completed" | "max_steps";
 };

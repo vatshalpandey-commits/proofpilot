@@ -1,9 +1,9 @@
 import { parseAgentDecision, type AgentDecision } from "./decision";
-import type { AgentState } from "./types";
+import type { WorkingState } from "./context";
 import type { ToolRegistry } from "./tool";
 
 export type ModelInput = {
-  state: AgentState;
+  state: WorkingState;
   tools: ReturnType<ToolRegistry["definitions"]>;
 };
 
@@ -20,6 +20,7 @@ export class ModelRequestError extends Error {
     readonly retryable: boolean,
     readonly status?: number,
     readonly provider?: "gemini" | "groq",
+    readonly retryAfterMs?: number,
   ) {
     super(message);
     this.name = "ModelRequestError";
@@ -65,6 +66,7 @@ export class GeminiModel implements AgentModel {
         response.status === 429 || response.status >= 500,
         response.status,
         "gemini",
+        retryAfter(response.headers),
       );
     }
 
@@ -113,6 +115,7 @@ export class GroqModel implements AgentModel {
         result.response.status === 429 || result.response.status >= 500,
         result.response.status,
         "groq",
+        retryAfter(result.response.headers),
       );
     }
 
@@ -141,6 +144,53 @@ export class GroqModel implements AgentModel {
   }
 }
 
+export type RateLimitRetryOptions = {
+  maxRetries?: number;
+  baseDelayMs?: number;
+  maxDelayMs?: number;
+  sleep?: (milliseconds: number) => Promise<void>;
+};
+
+export class RateLimitRetryModel implements AgentModel {
+  private notices: ModelNotice[] = [];
+  private readonly maxRetries: number;
+  private readonly baseDelayMs: number;
+  private readonly maxDelayMs: number;
+  private readonly sleep: (milliseconds: number) => Promise<void>;
+
+  constructor(private readonly model: AgentModel, options: RateLimitRetryOptions = {}) {
+    this.maxRetries = options.maxRetries ?? 2;
+    this.baseDelayMs = options.baseDelayMs ?? 500;
+    this.maxDelayMs = options.maxDelayMs ?? 8_000;
+    this.sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  }
+
+  async decide(input: ModelInput): Promise<AgentDecision> {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await this.model.decide(input);
+      } catch (error) {
+        if (!(error instanceof ModelRequestError) || error.provider !== "groq" || error.status !== 429) throw error;
+        if (attempt >= this.maxRetries) {
+          this.notices.push({ title: "Rate-limit recovery exhausted", detail: `Groq remained rate limited after ${this.maxRetries} retries. The run stopped safely.` });
+          throw new ModelRequestError(error.message, false, 429, "groq", error.retryAfterMs);
+        }
+        const fallbackDelay = Math.min(this.maxDelayMs, this.baseDelayMs * 2 ** attempt);
+        const delay = error.retryAfterMs ?? fallbackDelay;
+        this.notices.push({
+          title: "Provider rate limit — retrying",
+          detail: `Groq requested a temporary pause. Retrying the same agent step in ${delay}ms (${attempt + 1}/${this.maxRetries}).`,
+        });
+        await this.sleep(delay);
+      }
+    }
+  }
+
+  drainNotices() {
+    return [...(this.model.drainNotices?.() ?? []), ...this.notices.splice(0)];
+  }
+}
+
 export class QuotaFallbackModel implements AgentModel {
   private notices: ModelNotice[] = [];
 
@@ -163,12 +213,12 @@ export class QuotaFallbackModel implements AgentModel {
   }
 
   drainNotices() {
-    return this.notices.splice(0);
+    return [...(this.primary.drainNotices?.() ?? []), ...(this.fallback.drainNotices?.() ?? []), ...this.notices.splice(0)];
   }
 }
 
 function createPrompt(
-  state: AgentState,
+  state: WorkingState,
   tools: ReturnType<ToolRegistry["definitions"]>,
 ) {
   return `You are the decision engine inside ProofPilot. The application, not you,
@@ -185,7 +235,9 @@ ${JSON.stringify(
   {
     step: state.step,
     plan: state.plan,
-    observations: state.observations,
+    recentObservations: state.recentObservations,
+    relevantEvidence: state.relevantEvidence,
+    latestToolResult: state.latestToolResult,
   },
   null,
   2,
@@ -203,5 +255,18 @@ For a tool call:
 {"action":"tool","plan":["step"],"rationale":"brief reason","tool":"tool_name","arguments":{}}
 
 When the evidence is sufficient:
-{"action":"final","plan":["step"],"rationale":"brief reason","answer":"cited final response"}`;
+{"action":"final","plan":["step"],"rationale":"brief reason","answer":"readable cited report","claims":[{"id":"CL-001","text":"one independently understandable factual finding","evidenceIds":["EV-001"]}]}
+
+Every factual final claim must cite one or more evidence IDs from RELEVANT
+EVIDENCE. Never invent an evidence ID. Omit unsupported claims and state gaps in
+the answer.`;
+}
+
+function retryAfter(headers: Headers) {
+  const value = headers.get("retry-after");
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, Math.ceil(seconds * 1_000));
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
 }

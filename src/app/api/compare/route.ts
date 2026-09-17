@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { GeminiModel, GroqModel, runAgent } from "@/agent";
+import { GeminiModel, GroqModel, RateLimitRetryModel, runAgent } from "@/agent";
 import { runLangChainBaseline } from "@/comparison/langchain";
 import { createResearchToolRegistry } from "@/tools/registry";
 
@@ -18,7 +18,7 @@ export async function POST(request: Request) {
 
     const modelName = groqApiKey ? "qwen/qwen3.8-27b" : "gemini-3.6-flash";
     const proofModel = groqApiKey
-      ? new GroqModel(groqApiKey, modelName)
+      ? new RateLimitRetryModel(new GroqModel(groqApiKey, modelName))
       : new GeminiModel(geminiApiKey);
     const baselineProvider = groqApiKey
       ? { type: "groq" as const, apiKey: groqApiKey, model: modelName }
