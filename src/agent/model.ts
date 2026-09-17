@@ -11,6 +11,13 @@ export interface AgentModel {
   decide(input: ModelInput): Promise<AgentDecision>;
 }
 
+export class ModelRequestError extends Error {
+  constructor(message: string, readonly retryable: boolean) {
+    super(message);
+    this.name = "ModelRequestError";
+  }
+}
+
 type GeminiResponse = {
   candidates?: Array<{
     content?: { parts?: Array<{ text?: string }> };
@@ -45,7 +52,10 @@ export class GeminiModel implements AgentModel {
 
     const body = (await response.json()) as GeminiResponse;
     if (!response.ok) {
-      throw new Error(body.error?.message ?? `Gemini request failed (${response.status})`);
+      throw new ModelRequestError(
+        body.error?.message ?? `Gemini request failed (${response.status})`,
+        response.status >= 500,
+      );
     }
 
     const text = body.candidates?.[0]?.content?.parts
@@ -83,6 +93,10 @@ ${JSON.stringify(
   null,
   2,
 )}
+
+You have at most five decisions including the final answer. Prefer the evidence
+snippets returned by web_search. Call read_webpage only when a search snippet is
+not enough, and avoid reading multiple pages unless their claims conflict.
 
 Return JSON only. Never reveal private chain-of-thought. The rationale must be a
 short, user-safe explanation of why the action is useful.

@@ -1,4 +1,4 @@
-import type { AgentModel } from "./model";
+import { ModelRequestError, type AgentModel } from "./model";
 import type { AgentRunResult, AgentState, TraceEvent } from "./types";
 import type { ToolRegistry } from "./tool";
 
@@ -36,6 +36,9 @@ export async function runAgent(
       decision = await model.decide({ state, tools: tools.definitions() });
       modelFailures = 0;
     } catch (error) {
+      if (error instanceof ModelRequestError && !error.retryable) {
+        throw error;
+      }
       modelFailures += 1;
       addTrace(state, "recovery", "Invalid model response", errorMessage(error));
       if (modelFailures > maxModelFailures) throw error;
