@@ -9,10 +9,18 @@ export type ModelInput = {
 
 export interface AgentModel {
   decide(input: ModelInput): Promise<AgentDecision>;
+  drainNotices?(): ModelNotice[];
 }
 
+export type ModelNotice = { title: string; detail: string };
+
 export class ModelRequestError extends Error {
-  constructor(message: string, readonly retryable: boolean) {
+  constructor(
+    message: string,
+    readonly retryable: boolean,
+    readonly status?: number,
+    readonly provider?: "gemini" | "groq",
+  ) {
     super(message);
     this.name = "ModelRequestError";
   }
@@ -54,7 +62,9 @@ export class GeminiModel implements AgentModel {
     if (!response.ok) {
       throw new ModelRequestError(
         body.error?.message ?? `Gemini request failed (${response.status})`,
-        response.status >= 500,
+        response.status === 429 || response.status >= 500,
+        response.status,
+        "gemini",
       );
     }
 
@@ -67,6 +77,74 @@ export class GeminiModel implements AgentModel {
     }
 
     return parseAgentDecision(text);
+  }
+}
+
+type GroqResponse = {
+  choices?: Array<{ message?: { content?: string } }>;
+  error?: { message?: string };
+};
+
+export class GroqModel implements AgentModel {
+  constructor(
+    private readonly apiKey: string,
+    private readonly model = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile",
+  ) {}
+
+  async decide({ state, tools }: ModelInput): Promise<AgentDecision> {
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.model,
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+        messages: [{ role: "user", content: createPrompt(state, tools) }],
+      }),
+    });
+
+    const body = (await response.json()) as GroqResponse;
+    if (!response.ok) {
+      throw new ModelRequestError(
+        body.error?.message ?? `Groq request failed (${response.status})`,
+        response.status === 429 || response.status >= 500,
+        response.status,
+        "groq",
+      );
+    }
+
+    const text = body.choices?.[0]?.message?.content;
+    if (!text) throw new Error("Groq returned no decision");
+    return parseAgentDecision(text);
+  }
+}
+
+export class QuotaFallbackModel implements AgentModel {
+  private notices: ModelNotice[] = [];
+
+  constructor(
+    private readonly primary: AgentModel,
+    private readonly fallback: AgentModel,
+  ) {}
+
+  async decide(input: ModelInput): Promise<AgentDecision> {
+    try {
+      return await this.primary.decide(input);
+    } catch (error) {
+      if (!(error instanceof ModelRequestError) || error.status !== 429) throw error;
+      this.notices.push({
+        title: "Provider quota recovered",
+        detail: "Gemini reached its free-tier limit. ProofPilot continued this decision with Groq.",
+      });
+      return this.fallback.decide(input);
+    }
+  }
+
+  drainNotices() {
+    return this.notices.splice(0);
   }
 }
 
@@ -94,9 +172,10 @@ ${JSON.stringify(
   2,
 )}
 
-You have at most five decisions including the final answer. Prefer the evidence
-snippets returned by web_search. Call read_webpage only when a search snippet is
-not enough, and avoid reading multiple pages unless their claims conflict.
+You have at most three decisions including the final answer. Gather only the
+minimum evidence needed. Prefer the evidence snippets returned by web_search.
+Call read_webpage only when a search snippet is not enough. Use a second tool
+when it materially improves the answer, and make decision three a final answer.
 
 Return JSON only. Never reveal private chain-of-thought. The rationale must be a
 short, user-safe explanation of why the action is useful.

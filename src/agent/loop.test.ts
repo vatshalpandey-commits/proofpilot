@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { runAgent } from "./loop";
-import type { AgentModel } from "./model";
+import { ModelRequestError, QuotaFallbackModel, type AgentModel } from "./model";
 import { ToolRegistry } from "./tool";
 
 describe("custom agent loop", () => {
@@ -82,5 +82,41 @@ describe("custom agent loop", () => {
 
     expect(result.status).toBe("completed");
     expect(result.state.trace.some((event) => event.type === "recovery")).toBe(true);
+  });
+
+  it("records a visible recovery when the primary model reaches its quota", async () => {
+    const primary: AgentModel = {
+      async decide() {
+        throw new ModelRequestError("Quota exceeded", true, 429, "gemini");
+      },
+    };
+    const fallback: AgentModel = {
+      async decide() {
+        return {
+          action: "final",
+          plan: ["Answer with the available evidence"],
+          rationale: "The fallback provider completed the decision.",
+          answer: "Recovered successfully.",
+        };
+      },
+    };
+
+    const result = await runAgent(
+      "Explain the evidence clearly",
+      new QuotaFallbackModel(primary, fallback),
+      new ToolRegistry(),
+      { maxSteps: 1 },
+    );
+
+    expect(result.status).toBe("completed");
+    expect(result.answer).toBe("Recovered successfully.");
+    expect(result.state.trace).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "recovery",
+          title: "Provider quota recovered",
+        }),
+      ]),
+    );
   });
 });

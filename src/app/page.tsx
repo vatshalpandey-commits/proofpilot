@@ -101,7 +101,7 @@ export default function Home() {
     </div>
     </section>
     <section className="principles" data-reveal><div><p className="eyebrow">NOT JUST AN ANSWER</p><h2>The work behind it.</h2></div><div className="principle-grid"><article><span>01</span><h3>Decisions, in context.</h3><p>Inspect the agent’s recorded choices. See which tool it selected and what it asked.</p></article><article><span>02</span><h3>Evidence, kept close.</h3><p>Read source-backed findings alongside the observations gathered during the investigation.</p></article><article><span>03</span><h3>Failures, left visible.</h3><p>Unsuccessful attempts stay in the record. An incomplete run is never passed off as a finished answer.</p></article></div></section>
-    <footer><span><ShieldCheck size={12} />Custom plan → act → observe loop</span><span><TerminalSquare size={12} />Max 5 decisions</span><span><Radio size={12} />Recorded events only—never simulated</span><span>Gemini + Tavily</span></footer>
+    <footer><span><ShieldCheck size={12} />Custom plan → act → observe loop</span><span><TerminalSquare size={12} />Max 3 decisions</span><span><Radio size={12} />Recorded events only—never simulated</span><span>Gemini + Groq fallback + Tavily</span></footer>
   </main>;
 }
 
