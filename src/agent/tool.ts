@@ -33,6 +33,10 @@ export class ToolRegistry {
     }));
   }
 
+  all() {
+    return [...this.tools.values()];
+  }
+
   async execute(
     name: string,
     input: Record<string, unknown>,

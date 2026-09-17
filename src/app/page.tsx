@@ -9,6 +9,7 @@ type TraceEvent = { id: string; step: number; type: "decision" | "tool_started" 
 type Observation = { step: number; tool: string; input: Record<string, unknown>; result: ToolResult };
 type Result = { answer: string; status: "completed" | "max_steps"; state: { goal: string; plan: string[]; step: number; observations: Observation[]; trace: TraceEvent[] } };
 type View = "observe" | "trace" | "report" | "compare";
+type Comparison = { configuration:{model:string;tools:string[];stepCap:number;prompt:string}; proofpilot:{durationMs:number;toolCalls:number;events:number;recoveries:number;answer:string}; baseline:{answer:string;durationMs:number;modelCalls:number;toolCalls:number;events:Array<{sequence:number;type:string;title:string;detail:string}>} };
 
 const examples = ["Compare solar and nuclear power for India's next decade.", "Is an electric car cheaper over 5 years than a petrol car in Dubai?", "Does a four-day work week improve productivity?"];
 
@@ -22,6 +23,8 @@ export default function Home() {
   const [eventId, setEventId] = useState<string | null>(null);
   const [claim, setClaim] = useState<number | null>(null);
   const [judge, setJudge] = useState(false);
+  const [comparison, setComparison] = useState<Comparison | null>(null);
+  const [comparing, setComparing] = useState(false);
   const observations = useMemo(() => result?.state.observations ?? [], [result]);
   const stats = useMemo(() => ({ calls: observations.length, failures: observations.filter(x => !x.result.ok).length, sources: new Set(observations.flatMap(x => urls(x.result.ok ? x.result.data : null))).size, time: observations.reduce((n, x) => n + x.result.durationMs, 0) }), [observations]);
   const activeEvent = result?.state.trace.find(x => x.id === eventId) ?? result?.state.trace.at(-1) ?? null;
@@ -38,6 +41,18 @@ export default function Home() {
     finally { setLoading(false); }
   }
 
+  async function compare() {
+    if (question.trim().length < 10 || comparing) return;
+    setComparing(true); setError(""); setView("compare");
+    try {
+      const response = await fetch("/api/compare", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({question:question.trim()}) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.message ?? "Comparison failed");
+      setComparison(body);
+    } catch(e) { setError(e instanceof Error ? e.message : "Comparison failed"); }
+    finally { setComparing(false); }
+  }
+
   return <main className="shell">
     <header className="topbar">
       <div className="brand"><Logo /><div><b>ProofPilot</b><span>Agent Observatory · V2</span></div></div>
@@ -52,7 +67,7 @@ export default function Home() {
 
     <div className="workspace">
       <MissionRail result={result} stats={stats} show={view === "observe"} />
-      <section className={`field view-${view}`}>{view === "report" ? <Report result={result} claim={claim} setClaim={setClaim} /> : view === "compare" ? <Arena result={result} /> : <Constellation result={result} loading={loading} claim={claim} activeEvent={activeEvent} selectEvent={setEventId} />}</section>
+      <section className={`field view-${view}`}>{view === "report" ? <Report result={result} claim={claim} setClaim={setClaim} /> : view === "compare" ? <Arena comparison={comparison} loading={comparing} run={compare} /> : <Constellation result={result} loading={loading} claim={claim} activeEvent={activeEvent} selectEvent={setEventId} />}</section>
       <Inspector result={result} event={activeEvent} claim={claim} clearClaim={() => setClaim(null)} show={view === "trace"} />
       <Recorder result={result} eventId={eventId} select={setEventId} show={view === "trace"} />
     </div>
@@ -88,8 +103,8 @@ function Recorder({result,eventId,select,show}:{result:Result|null;eventId:strin
 
 function Report({result,claim,setClaim}:{result:Result|null;claim:number|null;setClaim:(x:number|null)=>void}) {const claims=result?splitClaims(result.answer).slice(0,12):[];return <article className="report"><header><div><span>EVIDENCE REPORT</span><h2>{result?"Investigation findings":"No report recorded"}</h2></div>{result&&<label><ShieldCheck size={14}/>Trace available</label>}</header>{result?<><div className="trace-tip"><Sparkles size={14}/><div><b>Trace this claim</b><span>Select any sentence to illuminate its evidence path.</span></div></div><div className="claims">{claims.map((x,i)=><button className={claim===i?"selected":""} onClick={()=>setClaim(claim===i?null:i)} key={x+i}><span>{String(i+1).padStart(2,"0")}</span><p>{x}</p><ChevronRight size={14}/></button>)}</div><details><summary>Read complete generated report</summary><div className="prose"><ReactMarkdown>{result.answer}</ReactMarkdown></div></details></>:<div className="empty"><FileSearch size={28}/><h3>Launch an investigation first</h3><p>Findings, citations, conflicts, and gaps will live here.</p></div>}</article>}
 
-function Arena({result}:{result:Result|null}) {return <div className="arena"><span>COMPARISON ARENA · BONUS TRACK</span><h2>Same mission. Equal conditions. Visible differences.</h2><p>Configuration is disclosed before traces are compared. The interface never invents a winner.</p><div className="disclosure"><b><Info size={13}/>Configuration disclosure</b><div><Metric label="Prompt" value="Identical"/><Metric label="Model" value="Gemini 3.6"/><Metric label="Tools" value="3 each"/><Metric label="Step cap" value="5 each"/></div></div><div className="lanes"><Lane title="ProofPilot" subtitle="Custom loop" live events={result?.state.trace.length??0}/><Lane title="LangChain baseline" subtitle="Standard framework" events={0}/></div><div className="pending"><FlaskConical size={16}/><div><b>Baseline adapter is the next V2 phase</b><p>The ProofPilot lane reflects real runs. The other lane remains honestly unavailable until implemented and tested.</p></div></div></div>}
-function Lane({title,subtitle,live,events}:{title:string;subtitle:string;live?:boolean;events:number}) {return <section className={`lane ${live?"live":""}`}><header>{live?<BrainCircuit size={17}/>:<Layers3 size={17}/>}<div><b>{title}</b><span>{subtitle}</span></div><i>{live?"LIVE":"PENDING"}</i></header><div className="metrics"><Metric label="Events" value={events}/><Metric label="Tool calls" value={live?events?"Recorded":"0":"—"}/></div><div className="bars">{events?Array.from({length:Math.min(events,7)}).map((_,i)=><i key={i} style={{height:28+(i%3)*17}}/>):<span>No paired trace recorded</span>}</div></section>}
+function Arena({comparison,loading,run}:{comparison:Comparison|null;loading:boolean;run:()=>void}) {return <div className="arena"><span>COMPARISON ARENA · BONUS TRACK</span><h2>Same mission. Equal conditions. Visible differences.</h2><p>Configuration is disclosed before traces are compared. The interface never invents a winner.</p><button className="compare-run" onClick={run} disabled={loading}>{loading?<LoaderCircle className="spin" size={14}/>:<Zap size={14}/>} {loading?"Running both agents":"Run fair comparison"}</button><div className="disclosure"><b><Info size={13}/>Configuration disclosure</b><div><Metric label="Prompt" value="Identical"/><Metric label="Model" value={comparison?.configuration.model??"Gemini 3.6"}/><Metric label="Tools" value="3 each"/><Metric label="Step cap" value={`${comparison?.configuration.stepCap??2} each`}/></div></div><div className="lanes"><Lane title="ProofPilot" subtitle="Custom loop" live events={comparison?.proofpilot.events??0} calls={comparison?.proofpilot.toolCalls??0} duration={comparison?.proofpilot.durationMs}/><Lane title="LangChain" subtitle="Standard framework" live={!!comparison} events={comparison?.baseline.events.length??0} calls={comparison?.baseline.toolCalls??0} duration={comparison?.baseline.durationMs}/></div>{comparison?<div className="comparison-note"><ShieldCheck size={15}/><div><b>Paired run recorded</b><p>Results are descriptive: inspect event count, tool calls, latency, recovery visibility, and both answers. Lower is not automatically better.</p></div></div>:<div className="pending"><FlaskConical size={16}/><div><b>Ready for a controlled paired run</b><p>This makes separate API calls and may use up to four Gemini requests. Wait for any free-tier cooldown first.</p></div></div>}</div>}
+function Lane({title,subtitle,live,events,calls,duration}:{title:string;subtitle:string;live?:boolean;events:number;calls:number;duration?:number}) {return <section className={`lane ${live?"live":""}`}><header>{title==="ProofPilot"?<BrainCircuit size={17}/>:<Layers3 size={17}/>}<div><b>{title}</b><span>{subtitle}</span></div><i>{live?"RECORDED":"READY"}</i></header><div className="metrics"><Metric label="Events" value={events}/><Metric label="Tool calls" value={calls}/><Metric label="Duration" value={duration?`${(duration/1000).toFixed(1)}s`:"—"}/></div><div className="bars">{events?Array.from({length:Math.min(events,7)}).map((_,i)=><i key={i} style={{height:28+(i%3)*17}}/>):<span>No paired trace recorded</span>}</div></section>}
 
 function Heading({overline,title,icon:ic}:{overline:string;title:string;icon:React.ReactNode}){return <div className="heading"><i>{ic}</i><div><span>{overline}</span><h2>{title}</h2></div></div>}
 function Metric({label,value,amber}:{label:string;value:string|number;amber?:boolean}){return <div className={`metric ${amber?"amber":""}`}><span>{label}</span><b>{value}</b></div>}
