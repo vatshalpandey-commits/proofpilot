@@ -98,7 +98,7 @@ export class GroqModel implements AgentModel {
     // Recover from a stale GROQ_MODEL environment override as well as provider
     // quota failures. Groq periodically moves models between access tiers.
     if (
-      result.response.status === 400 &&
+      [400, 404].includes(result.response.status) &&
       this.model !== "openai/gpt-oss-20b" &&
       /model.*(does not exist|access)/i.test(result.body.error?.message ?? "")
     ) {
