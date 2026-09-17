@@ -3,6 +3,7 @@
 import { AlertTriangle, ArrowUpRight, BrainCircuit, Calculator, Check, ChevronRight, CircleStop, FileSearch, FlaskConical, Gauge, GitBranch, Globe2, History, Info, Layers3, LoaderCircle, Radio, Search, ShieldCheck, Sparkles, TerminalSquare, Wrench, X, Zap } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { OrbitalFilm } from "./orbital-film";
 
 type ToolResult = { ok: true; data: unknown; durationMs: number } | { ok: false; error: string; code: string; retryable: boolean; durationMs: number };
 type TraceEvent = { id: string; step: number; type: "decision" | "tool_started" | "observation" | "recovery" | "final"; title: string; detail: string; timestamp: string };
@@ -20,6 +21,12 @@ export default function Home() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [view, setView] = useState<View>("observe");
+  const [transitionId, setTransitionId] = useState(0);
+  function navigate(next: View) {
+    if (next === view) return;
+    setTransitionId(id => id + 1);
+    setView(next);
+  }
   const [eventId, setEventId] = useState<string | null>(null);
   const [claim, setClaim] = useState<number | null>(null);
   const [judge, setJudge] = useState(false);
@@ -75,6 +82,7 @@ export default function Home() {
       <p className="intro-copy">Give your curiosity a direction. Follow the tools, explore the evidence, and see how an answer takes shape.</p>
       <a className="intro-link" href="#investigation">Start an investigation <ChevronRight size={18}/></a>
       <div className="intro-foot"><span>Built to investigate. Open to inspection.</span><span>01 — OBSERVE</span></div>
+      <OrbitalFilm />
     </section>
     <section className="investigation" id="investigation" aria-label="Research workspace">
     <div className="section-title" data-reveal><div><p className="eyebrow">YOUR NEXT QUESTION</p><h2>Look a little closer.</h2></div><p>One question. A trail you can follow.</p></div>
@@ -82,9 +90,10 @@ export default function Home() {
     <div className="suggestions"><span>Or explore</span>{examples.map((example,index)=><button key={example} disabled={loading} onClick={()=>setQuestion(example)}>{["The energy transition","The real cost of an EV","The four-day week"][index]}<ArrowUpRight size={14}/></button>)}</div>
     {judge && <div className="judge"><Gauge size={17} /><b>JUDGE MODE · 1/5 · CUSTOM LOOP</b><p>The center instrument is driven by our own plan → act → observe loop. {result ? "This run contains inspectable evidence." : "Launch a run to create evidence."}</p><button onClick={() => setJudge(false)}><X size={13} /></button></div>}
     {error && <div className="error"><CircleStop size={17} /><div><b>Research run stopped</b><p>{error}</p></div><button onClick={() => setError("")}><X size={14} /></button></div>}
-    <nav className="mobile-tabs" style={{"--active": ["observe","trace","report","compare"].indexOf(view)} as React.CSSProperties} aria-label="Investigation views">{(["observe", "trace", "report", "compare"] as View[]).map(x => <button aria-current={view===x?"page":undefined} className={view === x ? "selected" : ""} onClick={() => setView(x)} key={x}>{x}</button>)}</nav>
+    <nav className="mobile-tabs" style={{"--active": ["observe","trace","report","compare"].indexOf(view)} as React.CSSProperties} aria-label="Investigation views">{(["observe", "trace", "report", "compare"] as View[]).map(x => <button aria-current={view===x?"page":undefined} className={view === x ? "selected" : ""} onClick={() => navigate(x)} key={x}>{x}</button>)}</nav>
 
     <div className={`workspace mode-${view}`}>
+      {transitionId > 0 && <OrbitalFilm key={transitionId} transition />}
       <MissionRail result={result} stats={stats} show={view === "observe"} />
       <section key={view} className={`field view-${view}`}>{view === "report" ? <Report result={result} claim={claim} setClaim={setClaim} /> : view === "compare" ? <Arena comparison={comparison} loading={comparing} run={compare} /> : <><div className="field-heading"><span>The observatory</span><span className="field-status"><i className={loading?"live":""}/>{loading?"Awaiting recorded results":result?"Recorded investigation":"Ready when you are"}</span></div><Constellation result={result} loading={loading} claim={claim} activeEvent={activeEvent} selectEvent={setEventId} /></>}</section>
       <Inspector result={result} event={activeEvent} claim={claim} clearClaim={() => setClaim(null)} show={view === "trace"} />
