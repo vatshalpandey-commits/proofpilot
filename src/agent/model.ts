@@ -88,10 +88,38 @@ type GroqResponse = {
 export class GroqModel implements AgentModel {
   constructor(
     private readonly apiKey: string,
-    private readonly model = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile",
+    private readonly model = process.env.GROQ_MODEL ?? "openai/gpt-oss-20b",
   ) {}
 
   async decide({ state, tools }: ModelInput): Promise<AgentDecision> {
+    const prompt = createPrompt(state, tools);
+    let result = await this.request(this.model, prompt);
+
+    // Recover from a stale GROQ_MODEL environment override as well as provider
+    // quota failures. Groq periodically moves models between access tiers.
+    if (
+      result.response.status === 400 &&
+      this.model !== "openai/gpt-oss-20b" &&
+      /model.*(does not exist|access)/i.test(result.body.error?.message ?? "")
+    ) {
+      result = await this.request("openai/gpt-oss-20b", prompt);
+    }
+
+    if (!result.response.ok) {
+      throw new ModelRequestError(
+        result.body.error?.message ?? `Groq request failed (${result.response.status})`,
+        result.response.status === 429 || result.response.status >= 500,
+        result.response.status,
+        "groq",
+      );
+    }
+
+    const text = result.body.choices?.[0]?.message?.content;
+    if (!text) throw new Error("Groq returned no decision");
+    return parseAgentDecision(text);
+  }
+
+  private async request(model: string, prompt: string) {
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -99,26 +127,15 @@ export class GroqModel implements AgentModel {
         Authorization: `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify({
-        model: this.model,
+        model,
         temperature: 0.2,
         response_format: { type: "json_object" },
-        messages: [{ role: "user", content: createPrompt(state, tools) }],
+        messages: [{ role: "user", content: prompt }],
       }),
     });
 
     const body = (await response.json()) as GroqResponse;
-    if (!response.ok) {
-      throw new ModelRequestError(
-        body.error?.message ?? `Groq request failed (${response.status})`,
-        response.status === 429 || response.status >= 500,
-        response.status,
-        "groq",
-      );
-    }
-
-    const text = body.choices?.[0]?.message?.content;
-    if (!text) throw new Error("Groq returned no decision");
-    return parseAgentDecision(text);
+    return { response, body };
   }
 }
 
