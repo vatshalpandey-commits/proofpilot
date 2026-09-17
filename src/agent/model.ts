@@ -88,21 +88,23 @@ type GroqResponse = {
 export class GroqModel implements AgentModel {
   constructor(
     private readonly apiKey: string,
-    private readonly model = process.env.GROQ_MODEL ?? "openai/gpt-oss-20b",
+    private readonly model = process.env.GROQ_MODEL ?? "qwen/qwen3.8-27b",
   ) {}
 
   async decide({ state, tools }: ModelInput): Promise<AgentDecision> {
     const prompt = createPrompt(state, tools);
     let result = await this.request(this.model, prompt);
 
-    // Recover from a stale GROQ_MODEL environment override as well as provider
-    // quota failures. Groq periodically moves models between access tiers.
+    // Recover from stale model overrides and models that try to bypass our
+    // custom loop by emitting a provider-native tool call.
     if (
       [400, 404].includes(result.response.status) &&
-      this.model !== "openai/gpt-oss-20b" &&
-      /model.*(does not exist|access)/i.test(result.body.error?.message ?? "")
+      this.model !== "qwen/qwen3.8-27b" &&
+      /(model.*(does not exist|access)|tool choice is none)/i.test(
+        result.body.error?.message ?? "",
+      )
     ) {
-      result = await this.request("openai/gpt-oss-20b", prompt);
+      result = await this.request("qwen/qwen3.8-27b", prompt);
     }
 
     if (!result.response.ok) {
