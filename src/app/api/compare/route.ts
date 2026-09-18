@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     const tavilyApiKey = process.env.TAVILY_API_KEY;
     if (!geminiApiKey || !tavilyApiKey) return Response.json({ message: "Server API keys are not configured." }, { status: 503 });
 
-    const modelName = groqApiKey ? "qwen/qwen3.8-27b" : "gemini-3.6-flash";
+    const modelName = groqApiKey ? "openai/gpt-oss-20b" : "gemini-3.6-flash";
     const proofModel = groqApiKey
       ? new RateLimitRetryModel(new GroqModel(groqApiKey, modelName))
       : new GeminiModel(geminiApiKey);

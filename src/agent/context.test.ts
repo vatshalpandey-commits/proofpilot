@@ -19,8 +19,8 @@ describe("compact model context", () => {
     };
     const working = buildWorkingState(state);
     expect(state.observations[0].result.ok && JSON.stringify(state.observations[0].result.data).length).toBeGreaterThan(10_000);
-    expect(working.recentObservations).toHaveLength(3);
-    expect(working.relevantEvidence).toHaveLength(12);
+    expect(working.recentObservations).toHaveLength(2);
+    expect(working.relevantEvidence).toHaveLength(8);
     expect(JSON.stringify(working)).not.toContain("secret-trace");
     expect(JSON.stringify(working).length).toBeLessThan(12_000);
   });

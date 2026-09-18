@@ -3,7 +3,7 @@ import type { AgentState, ToolResult } from "./types";
 export type WorkingState = ReturnType<typeof buildWorkingState>;
 
 export function buildWorkingState(state: AgentState) {
-  const recent = state.observations.slice(-3);
+  const recent = state.observations.slice(-2);
   const latest = recent.at(-1);
   return {
     goal: state.goal,
@@ -17,18 +17,18 @@ export function buildWorkingState(state: AgentState) {
       input: compactInput(observation.input),
       outcome: summarizeResult(observation.result, 450),
     })),
-    relevantEvidence: state.evidence.slice(-12).map((item) => ({
+    relevantEvidence: state.evidence.slice(-8).map((item) => ({
       id: item.id,
       title: item.title,
       url: item.url,
-      supportingText: clip(item.supportingText, 600),
+      supportingText: clip(item.supportingText, 400),
       tool: item.tool,
       step: item.step,
     })),
     latestToolResult: latest ? {
       step: latest.step,
       tool: latest.tool,
-      result: summarizeResult(latest.result, 900),
+      result: summarizeResult(latest.result, 600),
     } : null,
   };
 }

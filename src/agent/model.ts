@@ -58,6 +58,7 @@ export class GeminiModel implements AgentModel {
           generationConfig: {
             temperature: 0.2,
             responseMimeType: "application/json",
+            maxOutputTokens: 1_200,
           },
         }),
         },
@@ -108,30 +109,38 @@ type GroqResponse = {
 };
 
 export class GroqModel implements AgentModel {
+  private notices: ModelNotice[] = [];
+
   constructor(
     private readonly apiKey: string,
-    private readonly model = process.env.GROQ_MODEL ?? "qwen/qwen3.8-27b",
+    private readonly model = process.env.GROQ_MODEL ?? "openai/gpt-oss-20b",
   ) {}
 
   async decide({ state, tools }: ModelInput): Promise<AgentDecision> {
     const prompt = createPrompt(state, tools);
-    let result = await this.request(this.model, prompt);
+    const candidates = [...new Set([this.model, "openai/gpt-oss-20b", "qwen/qwen3.8-27b"])];
 
-    // Recover from stale model overrides and models that try to bypass our
-    // custom loop by emitting a provider-native tool call.
-    if (
-      [400, 404].includes(result.response.status) &&
-      this.model !== "qwen/qwen3.8-27b" &&
-      /(model.*(does not exist|access)|tool choice is none)/i.test(
-        result.body.error?.message ?? "",
-      )
-    ) {
-      result = await this.request("qwen/qwen3.8-27b", prompt);
-    }
+    for (const [index, candidate] of candidates.entries()) {
+      const result = await this.request(candidate, prompt);
+      if (result.response.ok) {
+        const text = result.body.choices?.[0]?.message?.content;
+        if (!text) throw new Error("Groq returned no decision");
+        return parseAgentDecision(text);
+      }
 
-    if (!result.response.ok) {
+      const message = result.body.error?.message ?? `Groq request failed (${result.response.status})`;
+      const staleModel = [400, 404].includes(result.response.status) && /(model.*(does not exist|access)|tool choice is none)/i.test(message);
+      const canRotate = (result.response.status === 429 || staleModel) && index < candidates.length - 1;
+      if (canRotate) {
+        this.notices.push({
+          title: "Groq model pool recovered",
+          detail: `${candidate} was unavailable (${result.response.status}). ProofPilot continued the same decision with ${candidates[index + 1]}.`,
+        });
+        continue;
+      }
+
       throw new ModelRequestError(
-        result.body.error?.message ?? `Groq request failed (${result.response.status})`,
+        message,
         result.response.status === 429 || result.response.status >= 500,
         result.response.status,
         "groq",
@@ -139,9 +148,11 @@ export class GroqModel implements AgentModel {
       );
     }
 
-    const text = result.body.choices?.[0]?.message?.content;
-    if (!text) throw new Error("Groq returned no decision");
-    return parseAgentDecision(text);
+    throw new ModelRequestError("No Groq model pool was available", true, 503, "groq");
+  }
+
+  drainNotices() {
+    return this.notices.splice(0);
   }
 
   private async request(model: string, prompt: string) {
@@ -157,6 +168,7 @@ export class GroqModel implements AgentModel {
         body: JSON.stringify({
           model,
           temperature: 0.2,
+          max_completion_tokens: 1_200,
           response_format: { type: "json_object" },
           messages: [{ role: "user", content: prompt }],
         }),
