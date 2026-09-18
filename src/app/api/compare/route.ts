@@ -4,7 +4,7 @@ import { GeminiModel, GroqModel, RateLimitRetryModel, runAgent } from "@/agent";
 import { runLangChainBaseline } from "@/comparison/langchain";
 import { createResearchToolRegistry } from "@/tools/registry";
 
-export const maxDuration = 60;
+export const maxDuration = 90;
 
 const schema = z.object({ question: z.string().trim().min(10).max(3_000) });
 
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
 
     const proofRun = (async () => {
       const started = Date.now();
-      const result = await runAgent(question, proofModel, createResearchToolRegistry({ tavilyApiKey }), { maxSteps: 5, toolTimeoutMs: 10_000, modelTimeoutMs: 25_000, maxRunMs: 50_000, maxModelFailures: 0 });
+      const result = await runAgent(question, proofModel, createResearchToolRegistry({ tavilyApiKey }), { maxSteps: 5, toolTimeoutMs: 10_000, modelTimeoutMs: 25_000, maxRunMs: 82_000, maxModelFailures: 0 });
       return { result, durationMs: Date.now() - started };
     })();
     const baselineRun = runLangChainBaseline(question, baselineProvider, createResearchToolRegistry({ tavilyApiKey }));
