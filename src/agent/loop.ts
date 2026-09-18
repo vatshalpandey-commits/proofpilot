@@ -50,16 +50,24 @@ export async function runAgent(
     state.step += 1;
 
     let decision;
+    const modelCallTimeoutMs = Math.min(modelTimeoutMs, remainingRunMs - responseBufferMs);
+    const deadlineLimited = modelCallTimeoutMs < modelTimeoutMs;
     try {
       decision = await withTimeout(
         model.decide({ state: buildWorkingState(state), tools: tools.definitions() }),
-        Math.min(modelTimeoutMs, remainingRunMs - responseBufferMs),
-        "The model did not answer before the remaining runtime budget expired",
+        modelCallTimeoutMs,
+        deadlineLimited
+          ? "The model did not answer before the remaining runtime budget expired"
+          : `The model did not answer within ${modelTimeoutMs}ms`,
       );
       flushModelNotices(state, model);
       modelFailures = 0;
     } catch (error) {
       flushModelNotices(state, model);
+      if (deadlineLimited && error instanceof AgentStepTimeoutError) {
+        addTrace(state, "recovery", "Runtime budget reached", "The active decision was stopped so the recorded investigation could return before the hosting deadline.");
+        return stoppedResult(state, "ProofPilot stopped safely when the runtime budget was reached. The recorded evidence and events remain available.");
+      }
       if (error instanceof ModelRequestError && !error.retryable) {
         throw error;
       }
@@ -162,11 +170,18 @@ async function withTimeout<T>(promise: Promise<T>, milliseconds: number, message
     return await Promise.race([
       promise,
       new Promise<never>((_, reject) => {
-        timeout = setTimeout(() => reject(new Error(message)), milliseconds);
+        timeout = setTimeout(() => reject(new AgentStepTimeoutError(message)), milliseconds);
       }),
     ]);
   } finally {
     if (timeout) clearTimeout(timeout);
+  }
+}
+
+class AgentStepTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AgentStepTimeoutError";
   }
 }
 

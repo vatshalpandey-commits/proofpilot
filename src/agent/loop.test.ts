@@ -214,4 +214,23 @@ describe("custom agent loop", () => {
     ]);
     expect(result.state.evidence[0].eventId).toBeTruthy();
   });
+
+  it("returns a recorded partial result when the overall deadline expires during a decision", async () => {
+    const model: AgentModel = {
+      async decide() {
+        return new Promise(() => undefined);
+      },
+    };
+
+    const result = await runAgent("Research a deadline safely", model, new ToolRegistry(), {
+      maxSteps: 1,
+      modelTimeoutMs: 10_000,
+      maxRunMs: 2_005,
+    });
+
+    expect(result.status).toBe("max_steps");
+    expect(result.state.trace).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "recovery", title: "Runtime budget reached" }),
+    ]));
+  });
 });
