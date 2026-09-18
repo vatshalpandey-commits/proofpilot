@@ -1,6 +1,7 @@
 import { parseAgentDecision, type AgentDecision } from "./decision";
 import type { WorkingState } from "./context";
 import type { ToolRegistry } from "./tool";
+import { readJsonResponse, ResponseFormatError } from "../lib/http";
 
 export type ModelInput = {
   state: WorkingState;
@@ -59,7 +60,15 @@ export class GeminiModel implements AgentModel {
       },
     );
 
-    const body = (await response.json()) as GeminiResponse;
+    let body: GeminiResponse;
+    try {
+      body = await readJsonResponse<GeminiResponse>(response);
+    } catch (error) {
+      if (error instanceof ResponseFormatError) {
+        throw new ModelRequestError(`Gemini returned an invalid response (${error.status}).`, true, error.status, "gemini");
+      }
+      throw error;
+    }
     if (!response.ok) {
       throw new ModelRequestError(
         body.error?.message ?? `Gemini request failed (${response.status})`,
@@ -139,7 +148,15 @@ export class GroqModel implements AgentModel {
       }),
     });
 
-    const body = (await response.json()) as GroqResponse;
+    let body: GroqResponse;
+    try {
+      body = await readJsonResponse<GroqResponse>(response);
+    } catch (error) {
+      if (error instanceof ResponseFormatError) {
+        throw new ModelRequestError(`Groq returned an invalid response (${error.status}).`, true, error.status, "groq");
+      }
+      throw error;
+    }
     return { response, body };
   }
 }

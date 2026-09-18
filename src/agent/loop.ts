@@ -10,6 +10,8 @@ export type AgentLoopOptions = {
   toolTimeoutMs?: number;
   maxModelFailures?: number;
   mission?: AgentMission;
+  modelTimeoutMs?: number;
+  maxRunMs?: number;
 };
 
 export async function runAgent(
@@ -21,6 +23,9 @@ export async function runAgent(
   const maxSteps = options.maxSteps ?? 8;
   const toolTimeoutMs = options.toolTimeoutMs ?? 12_000;
   const maxModelFailures = options.maxModelFailures ?? 2;
+  const modelTimeoutMs = options.modelTimeoutMs ?? 12_000;
+  const maxRunMs = options.maxRunMs ?? 50_000;
+  const startedAt = Date.now();
   let modelFailures = 0;
 
   const state: AgentState = {
@@ -36,11 +41,19 @@ export async function runAgent(
   };
 
   while (state.step < maxSteps) {
+    if (Date.now() - startedAt >= maxRunMs) {
+      addTrace(state, "recovery", "Runtime budget reached", "The run stopped before the hosting deadline so it could return a valid recorded result.");
+      return stoppedResult(state, "ProofPilot stopped safely when the runtime budget was reached. Try Quick depth or narrow the question.");
+    }
     state.step += 1;
 
     let decision;
     try {
-      decision = await model.decide({ state: buildWorkingState(state), tools: tools.definitions() });
+      decision = await withTimeout(
+        model.decide({ state: buildWorkingState(state), tools: tools.definitions() }),
+        modelTimeoutMs,
+        `The model did not answer within ${modelTimeoutMs}ms`,
+      );
       flushModelNotices(state, model);
       modelFailures = 0;
     } catch (error) {
@@ -128,12 +141,25 @@ export async function runAgent(
     `The run stopped after ${maxSteps} steps to prevent an infinite loop.`,
   );
 
-  return {
-    answer: "ProofPilot stopped safely before producing a final answer.",
-    report: { answer: "ProofPilot stopped safely before producing a final answer.", claims: [], assessments: [] },
-    state,
-    status: "max_steps",
-  };
+  return stoppedResult(state, "ProofPilot stopped safely before producing a final answer.");
+}
+
+function stoppedResult(state: AgentState, answer: string): AgentRunResult {
+  return { answer, report: { answer, claims: [], assessments: [] }, state, status: "max_steps" };
+}
+
+async function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: string) {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(message)), milliseconds);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 function resolveChallenges(outcomes: ChallengeOutcome[], state: AgentState) {

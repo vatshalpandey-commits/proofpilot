@@ -39,7 +39,9 @@ export async function POST(request: Request) {
       createResearchToolRegistry({ tavilyApiKey, chaosMode: input.chaosMode }),
       {
         maxSteps: 3,
-        toolTimeoutMs: 15_000,
+        toolTimeoutMs: 10_000,
+        modelTimeoutMs: 10_000,
+        maxRunMs: 48_000,
         maxModelFailures: 1,
         mission: { kind: "challenge", originalQuestion: input.question, targets: input.claims },
       },

@@ -24,10 +24,13 @@ export async function POST(request: Request) {
       ? { type: "groq" as const, apiKey: groqApiKey, model: modelName }
       : { type: "gemini" as const, apiKey: geminiApiKey };
 
-    const proofStarted = Date.now();
-    const proofpilot = await runAgent(question, proofModel, createResearchToolRegistry({ tavilyApiKey }), { maxSteps: 5, toolTimeoutMs: 15_000, maxModelFailures: 0 });
-    const proofDurationMs = Date.now() - proofStarted;
-    const baseline = await runLangChainBaseline(question, baselineProvider, createResearchToolRegistry({ tavilyApiKey }));
+    const proofRun = (async () => {
+      const started = Date.now();
+      const result = await runAgent(question, proofModel, createResearchToolRegistry({ tavilyApiKey }), { maxSteps: 5, toolTimeoutMs: 10_000, modelTimeoutMs: 10_000, maxRunMs: 45_000, maxModelFailures: 0 });
+      return { result, durationMs: Date.now() - started };
+    })();
+    const baselineRun = runLangChainBaseline(question, baselineProvider, createResearchToolRegistry({ tavilyApiKey }));
+    const [{ result: proofpilot, durationMs: proofDurationMs }, baseline] = await Promise.all([proofRun, baselineRun]);
 
     return Response.json({
       configuration: { model: modelName, tools: ["web_search", "read_webpage", "calculator"], stepCap: 5, prompt: question },

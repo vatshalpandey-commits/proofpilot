@@ -28,7 +28,7 @@ export async function runLangChainBaseline(
   const startedAt = Date.now();
   const tools = registry.all().map((registered) =>
     tool(
-      async (input) => JSON.stringify(await registry.execute(registered.name, input as Record<string, unknown>, 15_000)),
+      async (input) => JSON.stringify(await registry.execute(registered.name, input as Record<string, unknown>, 8_000)),
       { name: registered.name, description: registered.description, schema: registered.inputSchema },
     ),
   );

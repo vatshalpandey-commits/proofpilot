@@ -4,6 +4,7 @@ import { AlertTriangle, ArrowUpRight, BrainCircuit, Calculator, Check, ChevronRi
 import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { replayVisibility } from "@/agent/replay";
+import { readJsonResponse } from "@/lib/http";
 import { OrbitalFilm } from "./orbital-film";
 
 type ToolResult = { ok: true; data: unknown; durationMs: number } | { ok: false; error: string; code: string; retryable: boolean; durationMs: number };
@@ -85,7 +86,7 @@ export default function Home() {
     setLoading(true); setError(""); setResult(null); setChallengeResult(null); setReplayCursor(null); setReplayPlaying(false); setEventId(null); setClaim(null); navigate("observe"); playTransition(); moveTo("workspace");
     try {
       const response = await fetch("/api/research", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: question.trim(), chaosMode: chaos, depth }) });
-      const body = await response.json();
+      const body = await readJsonResponse<{message?:string}&Result>(response);
       if (!response.ok) throw new Error(body.message ?? "Research run failed");
       setResult(body);
       navigate("report");
@@ -100,7 +101,7 @@ export default function Home() {
     setChallenging(true); setError(""); setChallengeResult(null);
     try {
       const response = await fetch("/api/challenge", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ question:result.state.goal, claims:result.report.claims.map(({id,text})=>({id,text})), chaosMode:false }) });
-      const body = await response.json();
+      const body = await readJsonResponse<{message?:string}&Result>(response);
       if (!response.ok) throw new Error(body.message ?? "Challenge investigation failed");
       setChallengeResult(body);
     } catch(e) { setError(e instanceof Error ? e.message : "Challenge investigation failed"); }
@@ -117,7 +118,7 @@ export default function Home() {
     setComparing(true); setError(""); setComparison(null); navigate("compare"); playTransition(); moveTo("workspace");
     try {
       const response = await fetch("/api/compare", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({question:question.trim()}) });
-      const body = await response.json();
+      const body = await readJsonResponse<{message?:string}&Comparison>(response);
       if (!response.ok) throw new Error(body.message ?? "Comparison failed");
       setComparison(body);
       playTransition();

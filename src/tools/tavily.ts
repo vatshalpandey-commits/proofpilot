@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { AgentTool } from "../agent/tool";
+import { readJsonResponse, ResponseFormatError } from "../lib/http";
 
 const searchInputSchema = z.object({
   query: z.string().min(2).max(300),
@@ -129,7 +130,15 @@ async function tavilyRequest<T>(
     body: JSON.stringify(body),
     signal,
   });
-  const data = (await response.json()) as T & { detail?: unknown };
+  let data: T & { detail?: unknown };
+  try {
+    data = await readJsonResponse<T & { detail?: unknown }>(response);
+  } catch (error) {
+    if (error instanceof ResponseFormatError) {
+      throw new Error(`Tavily returned an invalid response (${error.status}): ${error.preview || "empty body"}`);
+    }
+    throw error;
+  }
   if (!response.ok) {
     throw new Error(`Tavily request failed (${response.status}): ${formatDetail(data.detail)}`);
   }
