@@ -25,6 +25,7 @@ export async function runAgent(
   const maxModelFailures = options.maxModelFailures ?? 2;
   const modelTimeoutMs = options.modelTimeoutMs ?? 12_000;
   const maxRunMs = options.maxRunMs ?? 50_000;
+  const responseBufferMs = 2_000;
   const startedAt = Date.now();
   let modelFailures = 0;
 
@@ -41,9 +42,10 @@ export async function runAgent(
   };
 
   while (state.step < maxSteps) {
-    if (Date.now() - startedAt >= maxRunMs) {
+    const remainingRunMs = maxRunMs - (Date.now() - startedAt);
+    if (remainingRunMs <= responseBufferMs) {
       addTrace(state, "recovery", "Runtime budget reached", "The run stopped before the hosting deadline so it could return a valid recorded result.");
-      return stoppedResult(state, "ProofPilot stopped safely when the runtime budget was reached. Try Quick depth or narrow the question.");
+      return stoppedResult(state, "ProofPilot stopped safely when the runtime budget was reached. Try a narrower question or run it again shortly.");
     }
     state.step += 1;
 
@@ -51,8 +53,8 @@ export async function runAgent(
     try {
       decision = await withTimeout(
         model.decide({ state: buildWorkingState(state), tools: tools.definitions() }),
-        modelTimeoutMs,
-        `The model did not answer within ${modelTimeoutMs}ms`,
+        Math.min(modelTimeoutMs, remainingRunMs - responseBufferMs),
+        "The model did not answer before the remaining runtime budget expired",
       );
       flushModelNotices(state, model);
       modelFailures = 0;
@@ -114,10 +116,16 @@ export async function runAgent(
       arguments: decision.arguments,
     });
 
+    const remainingToolMs = maxRunMs - (Date.now() - startedAt) - responseBufferMs;
+    if (remainingToolMs <= 0) {
+      addTrace(state, "recovery", "Runtime budget reached", "The selected tool was not started because the run was too close to the hosting deadline.");
+      return stoppedResult(state, "ProofPilot stopped safely when the runtime budget was reached. Try a narrower question or run it again shortly.");
+    }
+
     const result = await tools.execute(
       decision.tool,
       decision.arguments,
-      toolTimeoutMs,
+      Math.min(toolTimeoutMs, remainingToolMs),
     );
     state.observations.push({
       step: state.step,
