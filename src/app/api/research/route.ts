@@ -8,7 +8,6 @@ export const maxDuration = 60;
 const requestSchema = z.object({
   question: z.string().trim().min(10).max(3_000),
   chaosMode: z.boolean().optional().default(false),
-  depth: z.enum(["quick", "standard", "deep"]).optional().default("standard"),
 });
 
 export async function POST(request: Request) {
@@ -33,7 +32,6 @@ export async function POST(request: Request) {
       ? new QuotaFallbackModel(primaryModel, new RateLimitRetryModel(new GroqModel(groqApiKey)))
       : primaryModel;
 
-    const maxSteps = { quick: 3, standard: 5, deep: 7 }[input.depth];
     const result = await runAgent(
       input.question,
       model,
@@ -41,7 +39,7 @@ export async function POST(request: Request) {
         tavilyApiKey,
         chaosMode: input.chaosMode,
       }),
-      { maxSteps, toolTimeoutMs: 10_000, modelTimeoutMs: 25_000, maxRunMs: 52_000, maxModelFailures: 1 },
+      { maxSteps: 5, toolTimeoutMs: 10_000, modelTimeoutMs: 55_000, maxRunMs: 58_000, maxModelFailures: 1 },
     );
 
     return Response.json(result);

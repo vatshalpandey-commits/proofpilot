@@ -48,7 +48,7 @@ export class GeminiModel implements AgentModel {
         `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`,
         {
         method: "POST",
-        signal: AbortSignal.timeout(10_000),
+        signal: AbortSignal.timeout(30_000),
         headers: {
           "Content-Type": "application/json",
           "x-goog-api-key": this.apiKey,
@@ -149,7 +149,7 @@ export class GroqModel implements AgentModel {
     try {
       response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
-        signal: AbortSignal.timeout(13_000),
+        signal: AbortSignal.timeout(25_000),
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.apiKey}`,

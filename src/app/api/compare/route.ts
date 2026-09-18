@@ -26,7 +26,7 @@ export async function POST(request: Request) {
 
     const proofRun = (async () => {
       const started = Date.now();
-      const result = await runAgent(question, proofModel, createResearchToolRegistry({ tavilyApiKey }), { maxSteps: 5, toolTimeoutMs: 10_000, modelTimeoutMs: 25_000, maxRunMs: 52_000, maxModelFailures: 0 });
+      const result = await runAgent(question, proofModel, createResearchToolRegistry({ tavilyApiKey }), { maxSteps: 5, toolTimeoutMs: 10_000, modelTimeoutMs: 55_000, maxRunMs: 58_000, maxModelFailures: 0 });
       return { result, durationMs: Date.now() - started };
     })();
     const baselineRun = runLangChainBaseline(question, baselineProvider, createResearchToolRegistry({ tavilyApiKey }));
