@@ -198,9 +198,9 @@ export class RateLimitRetryModel implements AgentModel {
   private readonly sleep: (milliseconds: number) => Promise<void>;
 
   constructor(private readonly model: AgentModel, options: RateLimitRetryOptions = {}) {
-    this.maxRetries = options.maxRetries ?? 2;
+    this.maxRetries = options.maxRetries ?? 1;
     this.baseDelayMs = options.baseDelayMs ?? 500;
-    this.maxDelayMs = options.maxDelayMs ?? 8_000;
+    this.maxDelayMs = options.maxDelayMs ?? 2_000;
     this.sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
   }
 
@@ -215,7 +215,7 @@ export class RateLimitRetryModel implements AgentModel {
           throw new ModelRequestError(error.message, false, 429, "groq", error.retryAfterMs);
         }
         const fallbackDelay = Math.min(this.maxDelayMs, this.baseDelayMs * 2 ** attempt);
-        const delay = error.retryAfterMs ?? fallbackDelay;
+        const delay = Math.min(this.maxDelayMs, error.retryAfterMs ?? fallbackDelay);
         this.notices.push({
           title: "Provider rate limit — retrying",
           detail: `Groq requested a temporary pause. Retrying the same agent step in ${delay}ms (${attempt + 1}/${this.maxRetries}).`,
@@ -232,6 +232,7 @@ export class RateLimitRetryModel implements AgentModel {
 
 export class QuotaFallbackModel implements AgentModel {
   private notices: ModelNotice[] = [];
+  private primaryUnavailable = false;
 
   constructor(
     private readonly primary: AgentModel,
@@ -239,10 +240,12 @@ export class QuotaFallbackModel implements AgentModel {
   ) {}
 
   async decide(input: ModelInput): Promise<AgentDecision> {
+    if (this.primaryUnavailable) return this.fallback.decide(input);
     try {
       return await this.primary.decide(input);
     } catch (error) {
       if (!(error instanceof ModelRequestError) || !error.retryable) throw error;
+      this.primaryUnavailable = true;
       this.notices.push({
         title: "Primary provider recovered",
         detail: `Gemini could not complete this decision (${error.message}). ProofPilot continued the same decision with Groq.`,

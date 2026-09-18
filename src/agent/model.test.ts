@@ -21,6 +21,22 @@ describe("Groq rate-limit recovery", () => {
     expect(result.state.trace.filter((event) => event.title === "Provider rate limit — retrying")).toHaveLength(2);
   });
 
+  it("caps a provider retry-after delay to the configured recovery budget", async () => {
+    let calls = 0;
+    const delays: number[] = [];
+    const provider: AgentModel = { async decide() {
+      calls += 1;
+      if (calls === 1) throw new ModelRequestError("slow down", true, 429, "groq", 60_000);
+      return { action: "final", plan: ["Finish"], rationale: "Recovered.", answer: "Done.", claims: [], challenges: [] };
+    } };
+    const model = new RateLimitRetryModel(provider, { maxRetries: 1, maxDelayMs: 2_000, sleep: async (ms) => { delays.push(ms); } });
+
+    await model.decide({ state: { goal: "test", mission: { kind: "research" }, maxSteps: 1, step: 0, plan: [], recentObservations: [], relevantEvidence: [], latestToolResult: null }, tools: [] });
+
+    expect(calls).toBe(2);
+    expect(delays).toEqual([2_000]);
+  });
+
   it("stops after the bounded retry budget is exhausted", async () => {
     let calls = 0;
     const provider: AgentModel = { async decide() { calls += 1; throw new ModelRequestError("still limited", true, 429, "groq", 1); } };

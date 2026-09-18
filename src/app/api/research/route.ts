@@ -39,7 +39,7 @@ export async function POST(request: Request) {
         tavilyApiKey,
         chaosMode: input.chaosMode,
       }),
-      { maxSteps: 5, toolTimeoutMs: 10_000, modelTimeoutMs: 50_000, maxRunMs: 290_000, maxModelFailures: 1 },
+      { maxSteps: 5, toolTimeoutMs: 10_000, modelTimeoutMs: 30_000, maxRunMs: 90_000, maxModelFailures: 1 },
     );
 
     return Response.json(result);
