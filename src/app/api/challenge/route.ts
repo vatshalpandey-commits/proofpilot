@@ -3,7 +3,7 @@ import { z } from "zod";
 import { GeminiModel, GroqModel, QuotaFallbackModel, RateLimitRetryModel, runAgent } from "@/agent";
 import { createResearchToolRegistry } from "@/tools/registry";
 
-export const maxDuration = 200;
+export const maxDuration = 300;
 
 const requestSchema = z.object({
   question: z.string().trim().min(10).max(3_000),
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
         maxSteps: 5,
         toolTimeoutMs: 10_000,
         modelTimeoutMs: 50_000,
-        maxRunMs: 190_000,
+        maxRunMs: 290_000,
         maxModelFailures: 1,
         mission: { kind: "challenge", originalQuestion: input.question, targets: input.claims },
       },
