@@ -8,6 +8,7 @@ export function buildWorkingState(state: AgentState) {
   return {
     goal: state.goal,
     mission: state.mission,
+    maxSteps: state.maxSteps,
     step: state.step,
     plan: state.plan,
     recentObservations: recent.map((observation) => ({

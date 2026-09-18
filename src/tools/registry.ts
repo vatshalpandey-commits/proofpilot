@@ -1,5 +1,5 @@
-import type { AgentTool } from "@/agent/tool";
-import { ToolRegistry } from "@/agent/tool";
+import type { AgentTool } from "../agent/tool";
+import { ToolRegistry } from "../agent/tool";
 
 import { calculatorTool } from "./calculator";
 import { createReadWebpageTool, createWebSearchTool } from "./tavily";
@@ -22,7 +22,7 @@ function failOnce(tool: AgentTool): AgentTool {
     async execute(input: never, context) {
       if (!hasFailed) {
         hasFailed = true;
-        throw new Error("CHAOS_MODE: simulated search-provider timeout");
+        throw new Error("FAULT_INJECTION: search provider timeout injected before the real adapter call");
       }
       return tool.execute(input, context);
     },

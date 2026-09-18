@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { AgentTool } from "@/agent/tool";
+import type { AgentTool } from "../agent/tool";
 
 const inputSchema = z.object({
   expression: z

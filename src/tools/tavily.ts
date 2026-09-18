@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { AgentTool } from "@/agent/tool";
+import type { AgentTool } from "../agent/tool";
 
 const searchInputSchema = z.object({
   query: z.string().min(2).max(300),

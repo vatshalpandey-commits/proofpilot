@@ -47,7 +47,7 @@ export async function runLangChainBaseline(
   const agent = createAgent({
     model,
     tools,
-    systemPrompt: "You are the baseline research agent in a fair comparison. Use at most two tool calls, cite URLs returned by tools, expose uncertainty, then answer concisely.",
+    systemPrompt: "You are the baseline research agent in a fair comparison. Use at most four tool calls, cite URLs returned by tools, expose uncertainty, then answer concisely.",
   });
   const output = await agent.invoke(
     { messages: [{ role: "user", content: goal }] },

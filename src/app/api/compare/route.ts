@@ -25,14 +25,19 @@ export async function POST(request: Request) {
       : { type: "gemini" as const, apiKey: geminiApiKey };
 
     const proofStarted = Date.now();
-    const proofpilot = await runAgent(question, proofModel, createResearchToolRegistry({ tavilyApiKey }), { maxSteps: 2, toolTimeoutMs: 15_000, maxModelFailures: 0 });
+    const proofpilot = await runAgent(question, proofModel, createResearchToolRegistry({ tavilyApiKey }), { maxSteps: 5, toolTimeoutMs: 15_000, maxModelFailures: 0 });
     const proofDurationMs = Date.now() - proofStarted;
     const baseline = await runLangChainBaseline(question, baselineProvider, createResearchToolRegistry({ tavilyApiKey }));
 
     return Response.json({
-      configuration: { model: modelName, tools: ["web_search", "read_webpage", "calculator"], stepCap: 2, prompt: question },
+      configuration: { model: modelName, tools: ["web_search", "read_webpage", "calculator"], stepCap: 5, prompt: question },
       proofpilot: { durationMs: proofDurationMs, toolCalls: proofpilot.state.observations.length, events: proofpilot.state.trace.length, recoveries: proofpilot.state.observations.filter((item) => !item.result.ok).length, answer: proofpilot.answer, trace: proofpilot.state.trace },
       baseline,
+      takeaways: [
+        { label: "Inspectable execution", finding: `ProofPilot exposed ${proofpilot.state.trace.length} decision, tool, observation, and recovery events; the baseline exposed ${baseline.events.length} framework-level events.`, evidence: "Counted from the paired traces shown below." },
+        { label: "Tool behavior", finding: `ProofPilot made ${proofpilot.state.observations.length} tool calls; LangChain made ${baseline.toolCalls}.`, evidence: "Both lanes received the same question, model family, tools, and bounded run instructions." },
+        { label: "Run time", finding: `ProofPilot completed in ${(proofDurationMs / 1000).toFixed(1)}s; LangChain completed in ${(baseline.durationMs / 1000).toFixed(1)}s.`, evidence: "One paired run is descriptive evidence, not a universal framework ranking." },
+      ],
     });
   } catch (error) {
     if (error instanceof z.ZodError) return Response.json({ message: "Enter a valid research question." }, { status: 400 });

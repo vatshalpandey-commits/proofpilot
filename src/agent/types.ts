@@ -83,12 +83,14 @@ export type TraceEvent = {
   type: "decision" | "tool_started" | "observation" | "recovery" | "final";
   title: string;
   detail: string;
+  payload?: Record<string, unknown>;
   timestamp: string;
 };
 
 export type AgentState = {
   goal: string;
   mission: AgentMission;
+  maxSteps: number;
   plan: string[];
   step: number;
   observations: Observation[];

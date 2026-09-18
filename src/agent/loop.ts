@@ -26,6 +26,7 @@ export async function runAgent(
   const state: AgentState = {
     goal,
     mission: options.mission ?? { kind: "research" },
+    maxSteps,
     plan: ["Understand the research goal"],
     step: 0,
     observations: [],
@@ -54,7 +55,13 @@ export async function runAgent(
     }
 
     state.plan = decision.plan;
-    addTrace(state, "decision", "Agent decision", decision.rationale);
+    addTrace(state, "decision", "Agent decision", decision.rationale, {
+      action: decision.action,
+      rationale: decision.rationale,
+      plan: decision.plan,
+      availableTools: tools.definitions().map((tool) => tool.name),
+      ...(decision.action === "tool" ? { selectedTool: decision.tool, arguments: decision.arguments } : {}),
+    });
 
     if (decision.action === "final") {
       addTrace(state, "final", "Research complete", "The agent produced its final report.");
@@ -89,7 +96,10 @@ export async function runAgent(
     }
 
     state.seenToolCalls.push(signature);
-    addTrace(state, "tool_started", `Calling ${decision.tool}`, JSON.stringify(decision.arguments));
+    addTrace(state, "tool_started", `Calling ${decision.tool}`, JSON.stringify(decision.arguments), {
+      tool: decision.tool,
+      arguments: decision.arguments,
+    });
 
     const result = await tools.execute(
       decision.tool,
@@ -143,6 +153,7 @@ function addTrace(
   type: TraceEvent["type"],
   title: string,
   detail: string,
+  payload?: Record<string, unknown>,
 ) {
   const event = {
     id: crypto.randomUUID(),
@@ -150,6 +161,7 @@ function addTrace(
     type,
     title,
     detail,
+    ...(payload ? { payload } : {}),
     timestamp: new Date().toISOString(),
   };
   state.trace.push(event);

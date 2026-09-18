@@ -45,6 +45,12 @@ describe("custom agent loop", () => {
     expect(result.status).toBe("completed");
     expect(result.answer).toBe("The result is 42.");
     expect(result.state.observations[0].result.ok).toBe(true);
+    expect(result.state.trace.find((event) => event.type === "decision")?.payload).toMatchObject({
+      action: "tool",
+      selectedTool: "double",
+      arguments: { value: 21 },
+      availableTools: ["double"],
+    });
   });
 
   it("turns a failed tool call into an observation the model can recover from", async () => {

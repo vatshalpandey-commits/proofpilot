@@ -234,6 +234,7 @@ CURRENT STATE:
 ${JSON.stringify(
   {
     step: state.step,
+    maxSteps: state.maxSteps,
     mission: state.mission,
     plan: state.plan,
     recentObservations: state.recentObservations,
@@ -244,10 +245,11 @@ ${JSON.stringify(
   2,
 )}
 
-You have at most three decisions including the final answer. Gather only the
+You have at most ${state.maxSteps} decisions including the final answer. Gather only the
 minimum evidence needed. Prefer the evidence snippets returned by web_search.
 Call read_webpage only when a search snippet is not enough. Use a second tool
-when it materially improves the answer, and make decision three a final answer.
+when it materially improves the answer. Produce the final answer before the
+decision budget is exhausted.
 
 Return JSON only. Never reveal private chain-of-thought. The rationale must be a
 short, user-safe explanation of why the action is useful.
