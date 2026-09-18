@@ -283,7 +283,7 @@ export class QuotaFallbackModel implements AgentModel {
   }
 }
 
-function createPrompt(
+export function createPrompt(
   state: WorkingState,
   tools: ReturnType<ToolRegistry["definitions"]>,
 ) {
@@ -324,7 +324,7 @@ For a tool call:
 {"action":"tool","plan":["step"],"rationale":"brief reason","tool":"tool_name","arguments":{}}
 
 When the evidence is sufficient for a normal research mission:
-{"action":"final","plan":["step"],"rationale":"brief reason","answer":"readable cited report","claims":[{"id":"CL-001","text":"one independently understandable factual finding","evidenceIds":["EV-001"],"contradictingEvidenceIds":["EV-002"]}]}
+{"action":"final","plan":["step"],"rationale":"brief reason","answer":"readable cited report covering the mapped findings","claims":[{"id":"CL-001","text":"first independently understandable factual finding","evidenceIds":["EV-001"],"contradictingEvidenceIds":[]},{"id":"CL-002","text":"second distinct factual finding","evidenceIds":["EV-002"],"contradictingEvidenceIds":["EV-003"]},{"id":"CL-003","text":"third distinct factual finding","evidenceIds":["EV-004"],"contradictingEvidenceIds":[]}]}
 
 For a challenge mission, actively search for disconfirming evidence and return:
 {"action":"final","plan":["step"],"rationale":"brief reason","answer":"challenge summary","claims":[],"challenges":[{"targetClaimId":"the exact supplied claim ID","verdict":"upheld|weakened|revised|unresolved","explanation":"what the counter-investigation found","evidenceIds":["EV-001"]}]}
@@ -338,7 +338,13 @@ must refer only to target IDs supplied in the mission.
 Every factual final claim must cite one or more evidence IDs from RELEVANT
 EVIDENCE. Put evidence that directly challenges the claim in
 contradictingEvidenceIds, not evidenceIds. Never invent an evidence ID. Do not
-hide conflicting evidence. Omit unsupported claims and state gaps in the answer.`;
+hide conflicting evidence. For a normal research mission, map 3 to 5 distinct,
+decision-useful findings when the available evidence supports them. Each claim
+must express one specific finding rather than the whole report, use sequential
+IDs (CL-001, CL-002, ...), and appear in the readable answer. Fewer than 3 is
+acceptable only when fewer than 3 findings can be honestly supported. Never
+split or duplicate a finding merely to reach a target count. Omit unsupported
+claims and state gaps in the answer.`;
 }
 
 function retryAfter(headers: Headers) {

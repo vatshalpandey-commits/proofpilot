@@ -1,10 +1,27 @@
 import { describe, expect, it } from "vitest";
 
 import { runAgent } from "./loop";
-import { createGroqRequestBody, ModelRequestError, RateLimitRetryModel, type AgentModel } from "./model";
+import { createGroqRequestBody, createPrompt, ModelRequestError, RateLimitRetryModel, type AgentModel } from "./model";
 import { ToolRegistry } from "./tool";
 
 describe("Groq rate-limit recovery", () => {
+  it("asks research synthesis for multiple genuine claim mappings", () => {
+    const prompt = createPrompt({
+      goal: "Compare two options",
+      mission: { kind: "research" },
+      maxSteps: 5,
+      step: 4,
+      plan: ["Synthesize"],
+      recentObservations: [],
+      relevantEvidence: [{ id: "EV-001", title: "Source", url: "https://example.com", supportingText: "Evidence", tool: "web_search", step: 1 }],
+      latestToolResult: null,
+    }, []);
+
+    expect(prompt).toContain("map 3 to 5 distinct");
+    expect(prompt).toMatch(/Fewer than 3 is\s+acceptable only/);
+    expect(prompt).toContain('"id":"CL-003"');
+  });
+
   it("disables Compound built-in tools so only ProofPilot owns the agent loop", () => {
     const body = createGroqRequestBody("groq/compound-mini", "choose one action");
 
