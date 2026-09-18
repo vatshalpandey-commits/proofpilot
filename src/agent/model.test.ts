@@ -10,6 +10,7 @@ describe("Groq rate-limit recovery", () => {
 
     expect(body).toMatchObject({ compound_custom: { tools: { enabled_tools: [] } } });
     expect(body).not.toHaveProperty("response_format");
+    expect(body).not.toHaveProperty("max_completion_tokens");
   });
 
   it("respects retry timing, retries the same step, and records recovery", async () => {

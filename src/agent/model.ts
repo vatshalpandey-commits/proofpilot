@@ -200,10 +200,9 @@ export function createGroqRequestBody(model: string, prompt: string) {
   return {
     model,
     temperature: 0.2,
-    max_completion_tokens: 1_200,
     ...(compound
       ? { compound_custom: { tools: { enabled_tools: [] } } }
-      : { response_format: { type: "json_object" } }),
+      : { max_completion_tokens: 1_200, response_format: { type: "json_object" } }),
     messages: [{ role: "user", content: prompt }],
   };
 }
