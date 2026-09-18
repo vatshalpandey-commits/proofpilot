@@ -47,7 +47,12 @@ export function resolveClaims(
 ): ReportClaim[] {
   const known = new Set(evidence.map((item) => item.id));
   return claims
-    .map((claim) => ({ ...claim, evidenceIds: [...new Set(claim.evidenceIds)].filter((id) => known.has(id)) }))
+    .map((claim) => ({
+      ...claim,
+      evidenceIds: [...new Set(claim.evidenceIds)].filter((id) => known.has(id)),
+      contradictingEvidenceIds: [...new Set(claim.contradictingEvidenceIds ?? [])]
+        .filter((id) => known.has(id) && !claim.evidenceIds.includes(id)),
+    }))
     .filter((claim) => claim.evidenceIds.length > 0);
 }
 

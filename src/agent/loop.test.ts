@@ -26,6 +26,7 @@ describe("custom agent loop", () => {
           rationale: "The calculated result is available.",
           answer: "The result is 42.",
           claims: [],
+          challenges: [],
         };
       },
     };
@@ -67,6 +68,7 @@ describe("custom agent loop", () => {
           rationale: "The failure is visible and another attempt would not help.",
           answer: "The source failed, so the limitation is reported honestly.",
           claims: [],
+          challenges: [],
         };
       },
     };
@@ -100,6 +102,7 @@ describe("custom agent loop", () => {
           rationale: "The fallback provider completed the decision.",
           answer: "Recovered successfully.",
           claims: [],
+          challenges: [],
         };
       },
     };
@@ -136,9 +139,10 @@ describe("custom agent loop", () => {
           rationale: "The evidence supports a finding.",
           answer: "Solar capacity is growing.",
           claims: [
-            { id: "CL-001", text: "Solar capacity is growing.", evidenceIds: ["EV-001"] },
-            { id: "CL-002", text: "Unsupported claim.", evidenceIds: ["EV-999"] },
+            { id: "CL-001", text: "Solar capacity is growing.", evidenceIds: ["EV-001"], contradictingEvidenceIds: [] },
+            { id: "CL-002", text: "Unsupported claim.", evidenceIds: ["EV-999"], contradictingEvidenceIds: [] },
           ],
+          challenges: [],
         };
       },
     };
@@ -153,8 +157,55 @@ describe("custom agent loop", () => {
     });
 
     const result = await runAgent("Research solar capacity growth", model, tools, { maxSteps: 2 });
-    expect(result.report.claims).toEqual([{ id: "CL-001", text: "Solar capacity is growing.", evidenceIds: ["EV-001"] }]);
+    expect(result.report.claims).toEqual([{ id: "CL-001", text: "Solar capacity is growing.", evidenceIds: ["EV-001"], contradictingEvidenceIds: [] }]);
+    expect(result.report.assessments[0]).toMatchObject({
+      claimId: "CL-001",
+      status: "supported",
+      strength: "moderate",
+      supportingEvidenceIds: ["EV-001"],
+    });
     expect(result.state.evidence[0]).toMatchObject({ url: "https://example.com/report", tool: "web_search" });
     expect(result.state.trace.some((event) => event.id === result.state.evidence[0].eventId)).toBe(true);
+  });
+
+  it("runs a challenge mission through the same loop and validates its evidence", async () => {
+    let turn = 0;
+    const model: AgentModel = {
+      async decide({ state }) {
+        turn += 1;
+        expect(state.mission.kind).toBe("challenge");
+        if (turn === 1) return { action: "tool", plan: ["Seek counter-evidence"], rationale: "Test the original claim.", tool: "web_search", arguments: { query: "counter evidence" } };
+        return {
+          action: "final",
+          plan: ["Record challenge result"],
+          rationale: "Counter-evidence was found.",
+          answer: "The original claim needs a qualification.",
+          claims: [],
+          challenges: [
+            { targetClaimId: "CL-001", verdict: "weakened", explanation: "A credible exception was found.", evidenceIds: ["EV-001", "EV-999"] },
+            { targetClaimId: "CL-FAKE", verdict: "revised", explanation: "Invalid target.", evidenceIds: ["EV-001"] },
+          ],
+        };
+      },
+    };
+    const tools = new ToolRegistry().register({
+      name: "web_search",
+      description: "Searches",
+      parameters: { type: "object" },
+      inputSchema: z.object({ query: z.string() }),
+      async execute() {
+        return { results: [{ title: "Counter-study", url: "https://counter.example/study", snippet: "A documented exception challenges the broad claim." }] };
+      },
+    });
+
+    const result = await runAgent("Challenge the prior answer", model, tools, {
+      maxSteps: 2,
+      mission: { kind: "challenge", originalQuestion: "Is the claim always true?", targets: [{ id: "CL-001", text: "The claim is always true." }] },
+    });
+
+    expect(result.challenge?.outcomes).toEqual([
+      { targetClaimId: "CL-001", verdict: "weakened", explanation: "A credible exception was found.", evidenceIds: ["EV-001"] },
+    ]);
+    expect(result.state.evidence[0].eventId).toBeTruthy();
   });
 });

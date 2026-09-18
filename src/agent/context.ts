@@ -7,6 +7,7 @@ export function buildWorkingState(state: AgentState) {
   const latest = recent.at(-1);
   return {
     goal: state.goal,
+    mission: state.mission,
     step: state.step,
     plan: state.plan,
     recentObservations: recent.map((observation) => ({

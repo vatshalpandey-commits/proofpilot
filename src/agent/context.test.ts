@@ -8,6 +8,7 @@ describe("compact model context", () => {
     const raw = "x".repeat(12_000);
     const state: AgentState = {
       goal: "Investigate a claim",
+      mission: { kind: "research" },
       plan: ["Read evidence"],
       step: 4,
       observations: Array.from({ length: 5 }, (_, index) => ({ step: index + 1, tool: "read_webpage", input: { url: `https://example.com/${index}` }, result: { ok: true as const, data: { content: raw }, durationMs: 1 } })),

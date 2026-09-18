@@ -29,11 +29,52 @@ export type ReportClaim = {
   id: string;
   text: string;
   evidenceIds: string[];
+  contradictingEvidenceIds?: string[];
+};
+
+export type EvidenceStrength = "limited" | "moderate" | "strong";
+
+export type ClaimSupportStatus = "supported" | "conflicting" | "insufficient_evidence";
+
+export type ClaimEvidenceAssessment = {
+  claimId: string;
+  status: ClaimSupportStatus;
+  strength: EvidenceStrength;
+  supportingEvidenceIds: string[];
+  contradictingEvidenceIds: string[];
+  explanation: {
+    supportingRecords: number;
+    independentSources: number;
+    directRecords: number;
+    conflictingRecords: number;
+    reasons: string[];
+    limitations: string[];
+  };
 };
 
 export type EvidenceReport = {
   answer: string;
   claims: ReportClaim[];
+  assessments: ClaimEvidenceAssessment[];
+};
+
+export type ChallengeVerdict = "upheld" | "weakened" | "revised" | "unresolved";
+
+export type ChallengeTarget = Pick<ReportClaim, "id" | "text">;
+
+export type AgentMission =
+  | { kind: "research" }
+  | { kind: "challenge"; originalQuestion: string; targets: ChallengeTarget[] };
+
+export type ChallengeOutcome = {
+  targetClaimId: string;
+  verdict: ChallengeVerdict;
+  explanation: string;
+  evidenceIds: string[];
+};
+
+export type ChallengeReport = {
+  outcomes: ChallengeOutcome[];
 };
 
 export type TraceEvent = {
@@ -47,6 +88,7 @@ export type TraceEvent = {
 
 export type AgentState = {
   goal: string;
+  mission: AgentMission;
   plan: string[];
   step: number;
   observations: Observation[];
@@ -58,6 +100,7 @@ export type AgentState = {
 export type AgentRunResult = {
   answer: string;
   report: EvidenceReport;
+  challenge?: ChallengeReport;
   state: AgentState;
   status: "completed" | "max_steps";
 };

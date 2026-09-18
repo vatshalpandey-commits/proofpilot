@@ -18,6 +18,6 @@ describe("evidence provenance", () => {
       { id: "CL-1", text: "Supported", evidenceIds: ["EV-001"] },
       { id: "CL-2", text: "Invented", evidenceIds: ["EV-404"] },
     ], evidence);
-    expect(claims).toEqual([{ id: "CL-1", text: "Supported", evidenceIds: ["EV-001"] }]);
+    expect(claims).toEqual([{ id: "CL-1", text: "Supported", evidenceIds: ["EV-001"], contradictingEvidenceIds: [] }]);
   });
 });

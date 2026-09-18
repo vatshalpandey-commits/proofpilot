@@ -11,7 +11,7 @@ describe("Groq rate-limit recovery", () => {
     const provider: AgentModel = { async decide() {
       calls += 1;
       if (calls < 3) throw new ModelRequestError("slow down", true, 429, "groq", calls === 1 ? 1_250 : undefined);
-      return { action: "final", plan: ["Finish"], rationale: "Recovered.", answer: "Done.", claims: [] };
+      return { action: "final", plan: ["Finish"], rationale: "Recovered.", answer: "Done.", claims: [], challenges: [] };
     } };
     const model = new RateLimitRetryModel(provider, { maxRetries: 2, baseDelayMs: 500, sleep: async (ms) => { delays.push(ms); } });
     const result = await runAgent("Explain rate-limit recovery", model, new ToolRegistry(), { maxSteps: 1 });

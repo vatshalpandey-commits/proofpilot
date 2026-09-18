@@ -20,6 +20,13 @@ export const agentDecisionSchema = z.discriminatedUnion("action", [
       id: z.string().min(1).max(80),
       text: z.string().min(1),
       evidenceIds: z.array(z.string().min(1)).min(1),
+      contradictingEvidenceIds: z.array(z.string().min(1)).default([]),
+    })).default([]),
+    challenges: z.array(z.object({
+      targetClaimId: z.string().min(1).max(80),
+      verdict: z.enum(["upheld", "weakened", "revised", "unresolved"]),
+      explanation: z.string().min(1).max(1_000),
+      evidenceIds: z.array(z.string().min(1)).default([]),
     })).default([]),
   }),
 ]);

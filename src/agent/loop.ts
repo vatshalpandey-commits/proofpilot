@@ -1,13 +1,15 @@
 import { ModelRequestError, type AgentModel } from "./model";
 import { buildWorkingState } from "./context";
 import { captureEvidence, resolveClaims } from "./evidence";
-import type { AgentRunResult, AgentState, TraceEvent } from "./types";
+import { assessClaims } from "./intelligence";
+import type { AgentMission, AgentRunResult, AgentState, ChallengeOutcome, TraceEvent } from "./types";
 import type { ToolRegistry } from "./tool";
 
 export type AgentLoopOptions = {
   maxSteps?: number;
   toolTimeoutMs?: number;
   maxModelFailures?: number;
+  mission?: AgentMission;
 };
 
 export async function runAgent(
@@ -23,6 +25,7 @@ export async function runAgent(
 
   const state: AgentState = {
     goal,
+    mission: options.mission ?? { kind: "research" },
     plan: ["Understand the research goal"],
     step: 0,
     observations: [],
@@ -56,7 +59,14 @@ export async function runAgent(
     if (decision.action === "final") {
       addTrace(state, "final", "Research complete", "The agent produced its final report.");
       const claims = resolveClaims(decision.claims, state.evidence);
-      return { answer: decision.answer, report: { answer: decision.answer, claims }, state, status: "completed" };
+      const challenges = resolveChallenges(decision.challenges, state);
+      return {
+        answer: decision.answer,
+        report: { answer: decision.answer, claims, assessments: assessClaims(claims, state.evidence) },
+        ...(state.mission.kind === "challenge" ? { challenge: { outcomes: challenges } } : {}),
+        state,
+        status: "completed",
+      };
     }
 
     const signature = stableSignature(decision.tool, decision.arguments);
@@ -110,10 +120,22 @@ export async function runAgent(
 
   return {
     answer: "ProofPilot stopped safely before producing a final answer.",
-    report: { answer: "ProofPilot stopped safely before producing a final answer.", claims: [] },
+    report: { answer: "ProofPilot stopped safely before producing a final answer.", claims: [], assessments: [] },
     state,
     status: "max_steps",
   };
+}
+
+function resolveChallenges(outcomes: ChallengeOutcome[], state: AgentState) {
+  if (state.mission.kind !== "challenge") return [];
+  const targets = new Set(state.mission.targets.map((target) => target.id));
+  const evidence = new Set(state.evidence.map((record) => record.id));
+  return outcomes
+    .filter((outcome) => targets.has(outcome.targetClaimId))
+    .map((outcome) => ({
+      ...outcome,
+      evidenceIds: [...new Set(outcome.evidenceIds)].filter((id) => evidence.has(id)),
+    }));
 }
 
 function addTrace(

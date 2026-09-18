@@ -1,16 +1,19 @@
 "use client";
 
-import { AlertTriangle, ArrowUpRight, BrainCircuit, Calculator, Check, ChevronRight, CircleStop, FileSearch, FlaskConical, GitBranch, GitCompareArrows, Globe2, History, Info, Layers3, LoaderCircle, Radio, Search, ShieldCheck, Sparkles, TerminalSquare, Wrench, X, Zap } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, BrainCircuit, Calculator, Check, ChevronRight, CircleStop, FileSearch, FlaskConical, GitBranch, GitCompareArrows, Globe2, History, Info, Layers3, LoaderCircle, Pause, Play, Radio, RotateCcw, Search, ShieldCheck, Sparkles, TerminalSquare, Wrench, X, Zap } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { replayVisibility } from "@/agent/replay";
 import { OrbitalFilm } from "./orbital-film";
 
 type ToolResult = { ok: true; data: unknown; durationMs: number } | { ok: false; error: string; code: string; retryable: boolean; durationMs: number };
 type TraceEvent = { id: string; step: number; type: "decision" | "tool_started" | "observation" | "recovery" | "final"; title: string; detail: string; timestamp: string };
 type Observation = { step: number; tool: string; input: Record<string, unknown>; result: ToolResult };
 type EvidenceRecord = { id:string;title:string;url:string|null;supportingText:string;tool:string;step:number;eventId:string };
-type ReportClaim = { id:string;text:string;evidenceIds:string[] };
-type Result = { answer: string; report:{answer:string;claims:ReportClaim[]}; status: "completed" | "max_steps"; state: { goal: string; plan: string[]; step: number; observations: Observation[]; evidence:EvidenceRecord[]; trace: TraceEvent[] } };
+type ReportClaim = { id:string;text:string;evidenceIds:string[];contradictingEvidenceIds?:string[] };
+type Assessment = { claimId:string;status:"supported"|"conflicting"|"insufficient_evidence";strength:"limited"|"moderate"|"strong";supportingEvidenceIds:string[];contradictingEvidenceIds:string[];explanation:{supportingRecords:number;independentSources:number;directRecords:number;conflictingRecords:number;reasons:string[];limitations:string[]} };
+type ChallengeOutcome = {targetClaimId:string;verdict:"upheld"|"weakened"|"revised"|"unresolved";explanation:string;evidenceIds:string[]};
+type Result = { answer: string; report:{answer:string;claims:ReportClaim[];assessments:Assessment[]}; challenge?:{outcomes:ChallengeOutcome[]}; status: "completed" | "max_steps"; state: { goal: string; plan: string[]; step: number; observations: Observation[]; evidence:EvidenceRecord[]; trace: TraceEvent[] } };
 type View = "observe" | "trace" | "report" | "compare";
 type ComparisonEvent = { sequence?:number; step?:number; type:string; title:string; detail:string };
 type Comparison = { configuration:{model:string;tools:string[];stepCap:number;prompt:string}; proofpilot:{durationMs:number;toolCalls:number;events:number;recoveries:number;answer:string;trace:ComparisonEvent[]}; baseline:{answer:string;durationMs:number;modelCalls:number;toolCalls:number;events:ComparisonEvent[]} };
@@ -45,9 +48,28 @@ export default function Home() {
   const [claim, setClaim] = useState<number | null>(null);
   const [comparison, setComparison] = useState<Comparison | null>(null);
   const [comparing, setComparing] = useState(false);
+  const [challengeResult, setChallengeResult] = useState<Result | null>(null);
+  const [challenging, setChallenging] = useState(false);
+  const [replayCursor, setReplayCursor] = useState<number | null>(null);
+  const [replayPlaying, setReplayPlaying] = useState(false);
   const observations = useMemo(() => result?.state.observations ?? [], [result]);
   const stats = useMemo(() => ({ calls: observations.length, failures: observations.filter(x => !x.result.ok).length, sources: new Set(observations.flatMap(x => urls(x.result.ok ? x.result.data : null))).size, time: observations.reduce((n, x) => n + x.result.durationMs, 0) }), [observations]);
-  const activeEvent = result?.state.trace.find(x => x.id === eventId) ?? result?.state.trace.at(-1) ?? null;
+  const replayResult = useMemo(() => projectReplay(result, replayCursor), [result, replayCursor]);
+  const visibleResult = view === "trace" ? replayResult : result;
+  const activeEvent = visibleResult?.state.trace.find(x => x.id === eventId) ?? visibleResult?.state.trace.at(-1) ?? null;
+
+  useEffect(() => {
+    if (!replayPlaying || !result) return;
+    const timer = window.setInterval(() => setReplayCursor(cursor => {
+      const next = (cursor ?? -1) + 1;
+      if (next >= result.state.trace.length - 1) {
+        setReplayPlaying(false);
+        return result.state.trace.length - 1;
+      }
+      return next;
+    }), 900);
+    return () => window.clearInterval(timer);
+  }, [replayPlaying, result]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(entries => {
@@ -59,7 +81,7 @@ export default function Home() {
 
   async function launch() {
     if (question.trim().length < 10 || loading) return;
-    setLoading(true); setError(""); setResult(null); setEventId(null); setClaim(null); navigate("observe"); playTransition(); moveTo("workspace");
+    setLoading(true); setError(""); setResult(null); setChallengeResult(null); setReplayCursor(null); setReplayPlaying(false); setEventId(null); setClaim(null); navigate("observe"); playTransition(); moveTo("workspace");
     try {
       const response = await fetch("/api/research", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: question.trim(), chaosMode: chaos }) });
       const body = await response.json();
@@ -70,6 +92,23 @@ export default function Home() {
       moveTo("workspace");
     } catch (e) { setError(e instanceof Error ? e.message : "Unexpected error"); }
     finally { setLoading(false); }
+  }
+
+  async function challengeAnswer() {
+    if (!result?.report.claims.length || challenging) return;
+    setChallenging(true); setError(""); setChallengeResult(null);
+    try {
+      const response = await fetch("/api/challenge", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ question:result.state.goal, claims:result.report.claims.map(({id,text})=>({id,text})), chaosMode:false }) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.message ?? "Challenge investigation failed");
+      setChallengeResult(body);
+    } catch(e) { setError(e instanceof Error ? e.message : "Challenge investigation failed"); }
+    finally { setChallenging(false); }
+  }
+
+  function startReplay() {
+    if (!result?.state.trace.length) return;
+    navigate("trace"); setEventId(null); setReplayCursor(0); setReplayPlaying(true); moveTo("workspace");
   }
 
   async function compare() {
@@ -88,7 +127,7 @@ export default function Home() {
   return <main className="shell">
     <a className="skip-link" href="#investigation">Skip to investigation</a>
     <header className="topbar">
-      <div className="brand"><Logo /><div><b>ProofPilot</b><span>Agent Observatory · V2</span></div></div>
+      <div className="brand"><Logo /><div><b>ProofPilot</b><span>Evidence Intelligence · V3</span></div></div>
       <div className="run-id"><i className={loading ? "live" : ""} />{loading ? "RUNNING" : result ? result.status.toUpperCase() : "READY"}<em />{result ? `${result.state.trace.length} EVENTS` : "NO ACTIVE TRACE"}</div>
       <div className="top-actions"><button className="top-compare" onClick={openComparison}><GitCompareArrows size={14} />Compare <span>Bonus</span></button><a href="https://github.com/vatshalpandey-commits/proofpilot" target="_blank" rel="noreferrer">Source <ArrowUpRight size={13} /></a></div>
     </header>
@@ -111,9 +150,9 @@ export default function Home() {
     <div className={`workspace mode-${view}`} id="workspace">
       {transitionId > 0 && <OrbitalFilm key={transitionId} transition />}
       <MissionRail result={result} stats={stats} show={view === "observe"} />
-      <section key={view} className={`field view-${view}`}>{view === "report" ? <Report result={result} claim={claim} setClaim={setClaim} /> : view === "compare" ? <Arena comparison={comparison} loading={comparing} run={compare} /> : <><div className="field-heading"><span>The observatory</span><span className="field-status"><i className={loading?"live":""}/>{loading?"Awaiting recorded results":result?"Recorded investigation":"Ready when you are"}</span></div><Constellation result={result} loading={loading} claim={claim} activeEvent={activeEvent} selectEvent={setEventId} /></>}</section>
-      <Inspector result={result} event={activeEvent} claim={claim} clearClaim={() => setClaim(null)} show={view === "trace"} />
-      <Recorder result={result} eventId={eventId} select={setEventId} show={view === "trace"} />
+      <section key={view} className={`field view-${view}`}>{view === "report" ? <Report result={result} challenge={challengeResult} challenging={challenging} runChallenge={challengeAnswer} claim={claim} setClaim={setClaim} /> : view === "compare" ? <Arena comparison={comparison} loading={comparing} run={compare} /> : <><div className="field-heading"><span>{replayCursor!==null&&view==="trace"?"Research replay":"The observatory"}</span><span className="field-status"><i className={loading?"live":""}/>{loading?"Awaiting recorded results":replayCursor!==null&&view==="trace"?`EVENT ${replayCursor+1} / ${result?.state.trace.length??0}`:result?"Recorded investigation":"Ready when you are"}</span></div><Constellation result={visibleResult} loading={loading} claim={claim} activeEvent={activeEvent} selectEvent={setEventId} /></>}</section>
+      <Inspector result={visibleResult} event={activeEvent} claim={claim} clearClaim={() => setClaim(null)} show={view === "trace"} />
+      <Recorder result={result} eventId={eventId} select={setEventId} show={view === "trace"} replayCursor={replayCursor} playing={replayPlaying} start={startReplay} toggle={()=>setReplayPlaying(value=>!value)} scrub={setReplayCursor} stop={()=>{setReplayPlaying(false);setReplayCursor(null)}} />
     </div>
     </section>
     <section className="principles" data-reveal><div><p className="eyebrow">NOT JUST AN ANSWER</p><h2>The work behind it.</h2></div><div className="principle-grid"><article><span>01</span><h3>Decisions, in context.</h3><p>Inspect the agent’s recorded choices. See which tool it selected and what it asked.</p></article><article><span>02</span><h3>Evidence, kept close.</h3><p>Read source-backed findings alongside the observations gathered during the investigation.</p></article><article><span>03</span><h3>Failures, left visible.</h3><p>Unsuccessful attempts stay in the record. An incomplete run is never passed off as a finished answer.</p></article></div></section>
@@ -144,12 +183,14 @@ function Inspector({ result,event,claim,clearClaim,show }:{result:Result|null;ev
   const observation=event?result?.state.observations.find(x=>x.step===event.step):undefined;
   const selectedClaim=claim!==null?result?.report.claims[claim]:undefined;
   const evidence=selectedClaim?result?.state.evidence.filter(item=>selectedClaim.evidenceIds.includes(item.id))??[]:[];
-  return <aside className={`inspector mobile-panel ${show?"mobile-show":""}`}><Heading overline="Inspector rail" title={claim!==null?"Evidence chain":"Event inspector"} icon={<FileSearch size={15}/>}/>{selectedClaim?<div className="inspect"><label className="mint"><ShieldCheck size={13}/>VERIFIED MAPPING</label><h3>{selectedClaim.text}</h3><p>{evidence.length} stored evidence record{evidence.length===1?"":"s"} support this claim.</p><div className="evidence-chain">{evidence.map(item=>{const origin=result?.state.trace.find(trace=>trace.id===item.eventId);return <article key={item.id}><header><span>{item.id}</span><b>{item.title}</b></header><blockquote>{item.supportingText}</blockquote><dl><div><dt>Origin</dt><dd>{item.tool} · step {item.step}</dd></div><div><dt>Recorded event</dt><dd>{origin?.title??item.eventId}</dd></div></dl>{item.url&&<a href={item.url} target="_blank" rel="noreferrer">Open source <ArrowUpRight size={12}/></a>}</article>})}</div><button className="quiet" onClick={clearClaim}><X size={12}/>Clear trace</button></div>:claim!==null?<div className="empty"><AlertTriangle size={24}/><h3>No verified mapping</h3><p>This finding is not displayed because its evidence IDs did not resolve.</p></div>:event?<div className="inspect"><label className={tone(event.type)}>{icon(event.type)}{event.type.replace("_"," ")}</label><h3>{event.title}</h3><p>{event.detail}</p><dl><div><dt>Step</dt><dd>{event.step}</dd></div><div><dt>Recorded</dt><dd>{time(event.timestamp)}</dd></div>{observation&&<><div><dt>Tool</dt><dd>{observation.tool}</dd></div><div><dt>Latency</dt><dd>{observation.result.durationMs}ms</dd></div></>}</dl>{observation&&<pre>{JSON.stringify(observation.input,null,2)}</pre>}</div>:<div className="empty"><Radio size={24}/><h3>Nothing selected</h3><p>Launch a run, then select an event or report claim.</p></div>}</aside>;
+  const opposing=selectedClaim?result?.state.evidence.filter(item=>(selectedClaim.contradictingEvidenceIds??[]).includes(item.id))??[]:[];
+  const assessment=selectedClaim?result?.report.assessments.find(item=>item.claimId===selectedClaim.id):undefined;
+  return <aside className={`inspector mobile-panel ${show?"mobile-show":""}`}><Heading overline="Inspector rail" title={claim!==null?"Evidence chain":"Event inspector"} icon={<FileSearch size={15}/>}/>{selectedClaim?<div className="inspect"><label className={assessment?.status==="conflicting"?"amber":"mint"}>{assessment?.status==="conflicting"?<AlertTriangle size={13}/>:<ShieldCheck size={13}/>} {assessment?.status.replace("_"," ")??"VERIFIED MAPPING"}</label><h3>{selectedClaim.text}</h3><p>{evidence.length} supporting and {opposing.length} challenging stored evidence records.</p><div className="evidence-chain">{[...evidence,...opposing].map(item=>{const origin=result?.state.trace.find(trace=>trace.id===item.eventId);const challenges=opposing.some(record=>record.id===item.id);return <article className={challenges?"opposing":""} key={item.id}><header><span>{item.id}</span><b>{challenges?"Challenges · ":"Supports · "}{item.title}</b></header><blockquote>{item.supportingText}</blockquote><dl><div><dt>Origin</dt><dd>{item.tool} · step {item.step}</dd></div><div><dt>Recorded event</dt><dd>{origin?.title??item.eventId}</dd></div></dl>{item.url&&<a href={item.url} target="_blank" rel="noreferrer">Open source <ArrowUpRight size={12}/></a>}</article>})}</div><button className="quiet" onClick={clearClaim}><X size={12}/>Clear trace</button></div>:claim!==null?<div className="empty"><AlertTriangle size={24}/><h3>No verified mapping</h3><p>This finding is not displayed because its evidence IDs did not resolve.</p></div>:event?<div className="inspect"><label className={tone(event.type)}>{icon(event.type)}{event.type.replace("_"," ")}</label><h3>{event.title}</h3><p>{event.detail}</p><dl><div><dt>Step</dt><dd>{event.step}</dd></div><div><dt>Recorded</dt><dd>{time(event.timestamp)}</dd></div>{observation&&<><div><dt>Tool</dt><dd>{observation.tool}</dd></div><div><dt>Latency</dt><dd>{observation.result.durationMs}ms</dd></div></>}</dl>{observation&&<pre>{JSON.stringify(observation.input,null,2)}</pre>}</div>:<div className="empty"><Radio size={24}/><h3>Nothing selected</h3><p>Launch a run, then select an event or report claim.</p></div>}</aside>;
 }
 
-function Recorder({result,eventId,select,show}:{result:Result|null;eventId:string|null;select:(id:string)=>void;show:boolean}) { const events=result?.state.trace??[];return <section className={`recorder mobile-panel ${show?"mobile-show":""}`}><header><span>FLIGHT RECORDER</span><b>{events.length?`${events.length} recorded events`:"Awaiting launch"}</b></header><div className="event-track">{events.length?events.map((e,i)=><button className={`${eventId===e.id?"selected":""} ${e.type==="recovery"?"failed":""}`} key={e.id} onClick={()=>select(e.id)}><div><span>{String(i+1).padStart(2,"0")}</span><time>{time(e.timestamp)}</time></div><i className={tone(e.type)}>{icon(e.type)}</i><b>{e.title}</b><small>Step {e.step} · {e.type.replace("_"," ")}</small></button>):<div className="empty-track"><History size={18}/>Every real decision and tool result will appear here.</div>}</div></section> }
+function Recorder({result,eventId,select,show,replayCursor,playing,start,toggle,scrub,stop}:{result:Result|null;eventId:string|null;select:(id:string)=>void;show:boolean;replayCursor:number|null;playing:boolean;start:()=>void;toggle:()=>void;scrub:(cursor:number)=>void;stop:()=>void}) { const events=result?.state.trace??[];return <section className={`recorder mobile-panel ${show?"mobile-show":""}`}><header><div><span>FLIGHT RECORDER</span><b>{events.length?`${events.length} recorded events`:"Awaiting launch"}</b></div>{events.length>0&&<div className="replay-controls"><button onClick={replayCursor===null?start:toggle}>{replayCursor===null||!playing?<Play size={13}/>:<Pause size={13}/>}<span>{replayCursor===null?"Replay":playing?"Pause":"Resume"}</span></button>{replayCursor!==null&&<button onClick={stop}><RotateCcw size={13}/><span>Live record</span></button>}</div>}</header>{replayCursor!==null&&<div className="replay-scrubber"><input aria-label="Research replay position" type="range" min="0" max={Math.max(0,events.length-1)} value={replayCursor} onChange={event=>{scrub(Number(event.target.value));select(events[Number(event.target.value)].id)}}/><span>{replayCursor+1} / {events.length}</span></div>}<div className="event-track">{events.length?events.map((e,i)=><button className={`${eventId===e.id||replayCursor===i?"selected":""} ${e.type==="recovery"?"failed":""} ${replayCursor!==null&&i>replayCursor?"future":""}`} key={e.id} onClick={()=>{select(e.id);scrub(i)}}><div><span>{String(i+1).padStart(2,"0")}</span><time>{time(e.timestamp)}</time></div><i className={tone(e.type)}>{icon(e.type)}</i><b>{e.title}</b><small>Step {e.step} · {e.type.replace("_"," ")}</small></button>):<div className="empty-track"><History size={18}/>Every real decision and tool result will appear here.</div>}</div></section> }
 
-function Report({result,claim,setClaim}:{result:Result|null;claim:number|null;setClaim:(x:number|null)=>void}) {const claims=result?.report.claims??[];return <article className="report"><header><div><span>EVIDENCE REPORT</span><h2>{result?"Investigation findings":"No report recorded"}</h2></div>{result&&<label><ShieldCheck size={14}/>{claims.length} mapped finding{claims.length===1?"":"s"}</label>}</header>{result?<><div className="trace-tip"><Sparkles size={14}/><div><b>Trace a claim to its source</b><span>Select a mapped finding to reveal its stored excerpt, URL, tool call, and originating event.</span></div></div>{claims.length?<div className="claims">{claims.map((item,i)=><button className={claim===i?"selected":""} onClick={()=>setClaim(claim===i?null:i)} key={item.id}><span>{item.id}</span><p>{item.text}</p><em>{item.evidenceIds.length} source{item.evidenceIds.length===1?"":"s"}</em><ChevronRight size={14}/></button>)}</div>:<div className="mapping-gap"><AlertTriangle size={16}/><div><b>No claims passed provenance validation</b><p>The complete report remains available, but ProofPilot will not manufacture source links.</p></div></div>}<details><summary>Read complete generated report</summary><div className="prose"><ReactMarkdown>{result.report.answer}</ReactMarkdown></div></details></>:<div className="empty"><FileSearch size={28}/><h3>Launch an investigation first</h3><p>Findings, citations, conflicts, and gaps will live here.</p></div>}</article>}
+function Report({result,challenge,challenging,runChallenge,claim,setClaim}:{result:Result|null;challenge:Result|null;challenging:boolean;runChallenge:()=>void;claim:number|null;setClaim:(x:number|null)=>void}) {const claims=result?.report.claims??[];return <article className="report"><header><div><span>EVIDENCE INTELLIGENCE REPORT</span><h2>{result?"Investigation findings":"No report recorded"}</h2></div>{result&&<label><ShieldCheck size={14}/>{claims.length} mapped finding{claims.length===1?"":"s"}</label>}</header>{result?<><div className="trace-tip"><Sparkles size={14}/><div><b>Trace a claim to its source</b><span>Select a mapped finding to reveal support, conflicts, source material, and its recorded origin.</span></div></div>{claims.length?<><div className="claims">{claims.map((item,i)=>{const assessment=result.report.assessments.find(x=>x.claimId===item.id);return <button className={claim===i?"selected":""} onClick={()=>setClaim(claim===i?null:i)} key={item.id}><span>{item.id}</span><p>{item.text}</p><em className={`strength ${assessment?.strength??"limited"}`}>{assessment?.strength??"limited"}</em><ChevronRight size={14}/></button>})}</div><section className="radar"><header><div><span>CONTRADICTION RADAR</span><h3>What the evidence can actually carry.</h3></div><button onClick={runChallenge} disabled={challenging}>{challenging?<LoaderCircle className="spin" size={14}/>:<Zap size={14}/>} {challenging?"Challenging…":"Challenge my answer"}</button></header><div className="radar-grid">{result.report.assessments.map(assessment=><article className={assessment.status} key={assessment.claimId}><div><b>{assessment.claimId}</b><span className={`strength ${assessment.strength}`}>{assessment.strength}</span></div><h4>{assessment.status.replace("_"," ")}</h4><p>{assessment.explanation.reasons.join(" ")}</p>{assessment.explanation.limitations.length>0&&<ul>{assessment.explanation.limitations.map(item=><li key={item}>{item}</li>)}</ul>}</article>)}</div>{challenge&&<div className="challenge-results"><header><span>COUNTER-INVESTIGATION RECORDED</span><b>{challenge.state.trace.length} new events · {challenge.state.evidence.length} new evidence records</b></header>{challenge.challenge?.outcomes.length?<div>{challenge.challenge.outcomes.map(outcome=><article key={outcome.targetClaimId}><span className={`verdict ${outcome.verdict}`}>{outcome.verdict}</span><div><b>{outcome.targetClaimId}</b><p>{outcome.explanation}</p><small>{outcome.evidenceIds.length} counter-investigation evidence record{outcome.evidenceIds.length===1?"":"s"}</small></div></article>)}</div>:<p className="challenge-gap">The challenge run completed, but no outcome passed target-and-evidence validation.</p>}</div>}</section></>:<div className="mapping-gap"><AlertTriangle size={16}/><div><b>No claims passed provenance validation</b><p>The complete report remains available, but ProofPilot will not manufacture source links.</p></div></div>}<details><summary>Read complete generated report</summary><div className="prose"><ReactMarkdown>{result.report.answer}</ReactMarkdown></div></details></>:<div className="empty"><FileSearch size={28}/><h3>Launch an investigation first</h3><p>Findings, citations, conflicts, and gaps will live here.</p></div>}</article>}
 
 function Arena({comparison,loading,run}:{comparison:Comparison|null;loading:boolean;run:()=>void}) {return <div className={`arena ${loading?"comparing":""}`}><span>COMPARISON ARENA · BONUS TRACK</span><h2>Our framework against LangChain.</h2><p>The same question, model, and three tools enter both lanes. ProofPilot uses our custom plan → act → observe loop; the other lane uses LangChain’s standard agent runtime.</p><button className="compare-run" onClick={run} disabled={loading}>{loading?<LoaderCircle className="spin" size={14}/>:<Zap size={14}/>} {loading?"Running both systems…":"Run the head-to-head"}</button>{loading&&<div className="comparison-live" role="status"><div className="duel-orbit"><i/><i/><BrainCircuit size={23}/></div><div><b>Two real runs are in motion</b><p>Both lanes are using the same question, model, and tools. Results appear only after both executions finish.</p></div></div>}<div className="disclosure"><b><Info size={13}/>Fair-comparison setup</b><div><Metric label="Question" value="Identical"/><Metric label="Model" value={comparison?.configuration.model??"Free Groq model"}/><Metric label="Tools" value="Same 3"/><Metric label="Frameworks" value="Custom vs LangChain"/></div></div><div className="lanes"><Lane title="ProofPilot" subtitle="Our custom loop" live={!!comparison} events={comparison?.proofpilot.events??0} calls={comparison?.proofpilot.toolCalls??0} duration={comparison?.proofpilot.durationMs}/><Lane title="LangChain" subtitle="Standard framework" live={!!comparison} events={comparison?.baseline.events.length??0} calls={comparison?.baseline.toolCalls??0} duration={comparison?.baseline.durationMs}/></div>{comparison?<><div className="comparison-note"><ShieldCheck size={15}/><div><b>Paired run recorded</b><p>Inspect the answers and traces below. This shows what our framework exposes that a standard abstraction hides.</p></div></div><div className="answer-compare"><ComparisonAnswer title="ProofPilot final answer" subtitle="Custom framework" answer={comparison.proofpilot.answer} tone="proof"/><ComparisonAnswer title="LangChain final answer" subtitle="Standard framework" answer={comparison.baseline.answer} tone="chain"/></div><div className="trace-compare"><ComparisonTrace title="ProofPilot trace" events={comparison.proofpilot.trace}/><ComparisonTrace title="LangChain trace" events={comparison.baseline.events}/></div></>:!loading&&<div className="pending"><FlaskConical size={16}/><div><b>Ready for the bonus demonstration</b><p>Run both systems on the question above. The free Groq provider is used when configured, avoiding Gemini’s cooldown.</p></div></div>}</div>}
 function Lane({title,subtitle,live,events,calls,duration}:{title:string;subtitle:string;live?:boolean;events:number;calls:number;duration?:number}) {return <section className={`lane ${live?"live":""}`}><header>{title==="ProofPilot"?<BrainCircuit size={17}/>:<Layers3 size={17}/>}<div><b>{title}</b><span>{subtitle}</span></div><i>{live?"RECORDED":"READY"}</i></header><div className="metrics"><Metric label="Events" value={events}/><Metric label="Tool calls" value={calls}/><Metric label="Duration" value={duration?`${(duration/1000).toFixed(1)}s`:"—"}/></div><div className="bars"><span>{events ? `${events} events recorded in this lane` : "No paired trace recorded"}</span></div></section>}
@@ -164,3 +205,19 @@ function tone(t:TraceEvent["type"]){return t==="recovery"?"amber":t==="tool_star
 function icon(t:TraceEvent["type"]){return t==="recovery"?<AlertTriangle size={13}/>:t==="tool_started"?<Wrench size={13}/>:t==="observation"?<FileSearch size={13}/>:t==="final"?<Check size={13}/>:<BrainCircuit size={13}/>}
 function time(x:string){return new Date(x).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"})}
 function urls(v:unknown):string[]{if(!v||typeof v!=="object")return[];if(Array.isArray(v))return v.flatMap(urls);return Object.entries(v).flatMap(([k,x])=>k==="url"&&typeof x==="string"?[x]:urls(x))}
+
+function projectReplay(result:Result|null,cursor:number|null):Result|null {
+  if (!result || cursor===null) return result;
+  const {visibleTrace:trace,visibleEventIds,observedSteps,finalVisible}=replayVisibility(result.state.trace,cursor);
+  return {
+    ...result,
+    report:finalVisible?result.report:{answer:"",claims:[],assessments:[]},
+    state:{
+      ...result.state,
+      step:trace.at(-1)?.step??0,
+      trace,
+      observations:result.state.observations.filter(observation=>observedSteps.has(observation.step)),
+      evidence:result.state.evidence.filter(record=>visibleEventIds.has(record.eventId)),
+    },
+  };
+}

@@ -234,6 +234,7 @@ CURRENT STATE:
 ${JSON.stringify(
   {
     step: state.step,
+    mission: state.mission,
     plan: state.plan,
     recentObservations: state.recentObservations,
     relevantEvidence: state.relevantEvidence,
@@ -254,12 +255,22 @@ short, user-safe explanation of why the action is useful.
 For a tool call:
 {"action":"tool","plan":["step"],"rationale":"brief reason","tool":"tool_name","arguments":{}}
 
-When the evidence is sufficient:
-{"action":"final","plan":["step"],"rationale":"brief reason","answer":"readable cited report","claims":[{"id":"CL-001","text":"one independently understandable factual finding","evidenceIds":["EV-001"]}]}
+When the evidence is sufficient for a normal research mission:
+{"action":"final","plan":["step"],"rationale":"brief reason","answer":"readable cited report","claims":[{"id":"CL-001","text":"one independently understandable factual finding","evidenceIds":["EV-001"],"contradictingEvidenceIds":["EV-002"]}]}
+
+For a challenge mission, actively search for disconfirming evidence and return:
+{"action":"final","plan":["step"],"rationale":"brief reason","answer":"challenge summary","claims":[],"challenges":[{"targetClaimId":"the exact supplied claim ID","verdict":"upheld|weakened|revised|unresolved","explanation":"what the counter-investigation found","evidenceIds":["EV-001"]}]}
+
+Use upheld only when the challenge search found no credible disconfirming evidence
+and the newly gathered evidence still supports the target. Use weakened when new
+evidence materially qualifies it, revised when it should be rewritten, and
+unresolved when the available evidence cannot settle it. A challenge verdict
+must refer only to target IDs supplied in the mission.
 
 Every factual final claim must cite one or more evidence IDs from RELEVANT
-EVIDENCE. Never invent an evidence ID. Omit unsupported claims and state gaps in
-the answer.`;
+EVIDENCE. Put evidence that directly challenges the claim in
+contradictingEvidenceIds, not evidenceIds. Never invent an evidence ID. Do not
+hide conflicting evidence. Omit unsupported claims and state gaps in the answer.`;
 }
 
 function retryAfter(headers: Headers) {
