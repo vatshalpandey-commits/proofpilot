@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import { runAgent } from "./loop";
-import { ModelRequestError, RateLimitRetryModel, type AgentModel } from "./model";
+import { createGroqRequestBody, ModelRequestError, RateLimitRetryModel, type AgentModel } from "./model";
 import { ToolRegistry } from "./tool";
 
 describe("Groq rate-limit recovery", () => {
+  it("disables Compound built-in tools so only ProofPilot owns the agent loop", () => {
+    const body = createGroqRequestBody("groq/compound-mini", "choose one action");
+
+    expect(body).toMatchObject({ compound_custom: { tools: { enabled_tools: [] } } });
+    expect(body).not.toHaveProperty("response_format");
+  });
+
   it("respects retry timing, retries the same step, and records recovery", async () => {
     let calls = 0;
     const delays: number[] = [];

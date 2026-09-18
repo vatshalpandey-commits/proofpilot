@@ -124,7 +124,11 @@ export class GroqModel implements AgentModel {
       const result = await this.request(candidate, prompt);
       if (result.response.ok) {
         const text = result.body.choices?.[0]?.message?.content;
-        if (!text) throw new Error("Groq returned no decision");
+        if (!text && index < candidates.length - 1) {
+          this.notices.push({ title: "Empty model response recovered", detail: `${candidate} returned no decision. ProofPilot continued the same step with ${candidates[index + 1]}.` });
+          continue;
+        }
+        if (!text) throw new ModelRequestError("The available model returned an empty decision. Please retry shortly.", true, 502, "groq");
         return parseAgentDecision(text);
       }
 
@@ -167,13 +171,7 @@ export class GroqModel implements AgentModel {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.apiKey}`,
         },
-        body: JSON.stringify({
-          model,
-          temperature: 0.2,
-          max_completion_tokens: 1_200,
-          ...(model.startsWith("groq/compound") ? {} : { response_format: { type: "json_object" } }),
-          messages: [{ role: "user", content: prompt }],
-        }),
+        body: JSON.stringify(createGroqRequestBody(model, prompt)),
       });
     } catch (error) {
       throw new ModelRequestError(
@@ -195,6 +193,19 @@ export class GroqModel implements AgentModel {
     }
     return { response, body };
   }
+}
+
+export function createGroqRequestBody(model: string, prompt: string) {
+  const compound = model.startsWith("groq/compound");
+  return {
+    model,
+    temperature: 0.2,
+    max_completion_tokens: 1_200,
+    ...(compound
+      ? { compound_custom: { tools: { enabled_tools: [] } } }
+      : { response_format: { type: "json_object" } }),
+    messages: [{ role: "user", content: prompt }],
+  };
 }
 
 export type RateLimitRetryOptions = {
