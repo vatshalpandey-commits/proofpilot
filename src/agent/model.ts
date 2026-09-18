@@ -118,7 +118,7 @@ export class GroqModel implements AgentModel {
 
   async decide({ state, tools }: ModelInput): Promise<AgentDecision> {
     const prompt = createPrompt(state, tools);
-    const candidates = [...new Set([this.model, "openai/gpt-oss-20b", "qwen/qwen3.8-27b"])];
+    const candidates = [...new Set([this.model, "openai/gpt-oss-20b", "groq/compound-mini"])];
 
     for (const [index, candidate] of candidates.entries()) {
       const result = await this.request(candidate, prompt);
@@ -140,7 +140,9 @@ export class GroqModel implements AgentModel {
       }
 
       throw new ModelRequestError(
-        message,
+        result.response.status === 429
+          ? "All configured free model pools are temporarily rate limited. Please retry after the provider quota resets."
+          : message,
         result.response.status === 429 || result.response.status >= 500,
         result.response.status,
         "groq",
@@ -169,7 +171,7 @@ export class GroqModel implements AgentModel {
           model,
           temperature: 0.2,
           max_completion_tokens: 1_200,
-          response_format: { type: "json_object" },
+          ...(model.startsWith("groq/compound") ? {} : { response_format: { type: "json_object" } }),
           messages: [{ role: "user", content: prompt }],
         }),
       });

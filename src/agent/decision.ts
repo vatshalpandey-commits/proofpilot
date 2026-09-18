@@ -43,5 +43,12 @@ export function parseAgentDecision(value: unknown): AgentDecision {
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/, "");
 
-  return agentDecisionSchema.parse(JSON.parse(withoutFence));
+  try {
+    return agentDecisionSchema.parse(JSON.parse(withoutFence));
+  } catch (error) {
+    const start = withoutFence.indexOf("{");
+    const end = withoutFence.lastIndexOf("}");
+    if (start < 0 || end <= start) throw error;
+    return agentDecisionSchema.parse(JSON.parse(withoutFence.slice(start, end + 1)));
+  }
 }
