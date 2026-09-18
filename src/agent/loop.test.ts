@@ -126,7 +126,7 @@ describe("custom agent loop", () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: "recovery",
-          title: "Provider quota recovered",
+          title: "Primary provider recovered",
         }),
       ]),
     );

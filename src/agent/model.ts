@@ -42,10 +42,13 @@ export class GeminiModel implements AgentModel {
   ) {}
 
   async decide({ state, tools }: ModelInput): Promise<AgentDecision> {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`,
-      {
+    let response: Response;
+    try {
+      response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`,
+        {
         method: "POST",
+        signal: AbortSignal.timeout(10_000),
         headers: {
           "Content-Type": "application/json",
           "x-goog-api-key": this.apiKey,
@@ -57,8 +60,16 @@ export class GeminiModel implements AgentModel {
             responseMimeType: "application/json",
           },
         }),
-      },
-    );
+        },
+      );
+    } catch (error) {
+      throw new ModelRequestError(
+        error instanceof Error && error.name === "TimeoutError" ? "Gemini request timed out" : "Gemini network request failed",
+        true,
+        504,
+        "gemini",
+      );
+    }
 
     let body: GeminiResponse;
     try {
@@ -134,19 +145,30 @@ export class GroqModel implements AgentModel {
   }
 
   private async request(model: string, prompt: string) {
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
+    let response: Response;
+    try {
+      response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        signal: AbortSignal.timeout(13_000),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.2,
+          response_format: { type: "json_object" },
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+    } catch (error) {
+      throw new ModelRequestError(
+        error instanceof Error && error.name === "TimeoutError" ? "Groq request timed out" : "Groq network request failed",
+        true,
+        504,
+        "groq",
+      );
+    }
 
     let body: GroqResponse;
     try {
@@ -220,10 +242,10 @@ export class QuotaFallbackModel implements AgentModel {
     try {
       return await this.primary.decide(input);
     } catch (error) {
-      if (!(error instanceof ModelRequestError) || error.status !== 429) throw error;
+      if (!(error instanceof ModelRequestError) || !error.retryable) throw error;
       this.notices.push({
-        title: "Provider quota recovered",
-        detail: "Gemini reached its free-tier limit. ProofPilot continued this decision with Groq.",
+        title: "Primary provider recovered",
+        detail: `Gemini could not complete this decision (${error.message}). ProofPilot continued the same decision with Groq.`,
       });
       return this.fallback.decide(input);
     }

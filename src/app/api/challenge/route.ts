@@ -40,8 +40,8 @@ export async function POST(request: Request) {
       {
         maxSteps: 3,
         toolTimeoutMs: 10_000,
-        modelTimeoutMs: 10_000,
-        maxRunMs: 48_000,
+        modelTimeoutMs: 25_000,
+        maxRunMs: 52_000,
         maxModelFailures: 1,
         mission: { kind: "challenge", originalQuestion: input.question, targets: input.claims },
       },
